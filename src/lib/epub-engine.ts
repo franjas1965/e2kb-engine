@@ -149,51 +149,159 @@ export class EPUBCore {
 
   private extractChapters(zip: any): Chapter[] {
     const chapters: Chapter[] = [];
-    let rootFile = 'OEBPS/content.opf';
     const zipEntries = zip.getEntries();
-    for (const entry of zipEntries) { if (entry.entryName.endsWith('.opf')) { rootFile = entry.entryName; break; } }
+    
+    // Find container.xml to get rootfile path
+    let rootFile = 'OEBPS/content.opf';
+    try {
+      const containerXml = zip.readAsText('META-INF/container.xml');
+      const rootfileMatch = containerXml.match(/full-path="([^"]+)"/);
+      if (rootfileMatch) rootFile = rootfileMatch[1];
+    } catch {}
+    
+    // Find OPF file
+    for (const entry of zipEntries) {
+      if (entry.entryName.endsWith('.opf')) {
+        rootFile = entry.entryName;
+        break;
+      }
+    }
+    
     let opfContent = '';
-    try { opfContent = zip.readAsText(rootFile); } catch { for (const entry of zipEntries) { if (entry.entryName.endsWith('.opf')) { opfContent = zip.readAsText(entry.entryName); rootFile = entry.entryName; break; } } }
+    try { opfContent = zip.readAsText(rootFile); } 
+    catch { 
+      for (const entry of zipEntries) {
+        if (entry.entryName.endsWith('.opf')) {
+          opfContent = zip.readAsText(entry.entryName);
+          rootFile = entry.entryName;
+          break;
+        }
+      }
+    }
+    
     if (!opfContent) return chapters;
+    
     const opfDir = rootFile.substring(0, rootFile.lastIndexOf('/') + 1);
+    
+    // Extract manifest items
     const manifest: { id: string; href: string; mediaType: string }[] = [];
     const manifestMatches = opfContent.match(/<item[^>]*>/gi) || [];
     manifestMatches.forEach(item => {
       const idMatch = item.match(/id="([^"]+)"/);
       const hrefMatch = item.match(/href="([^"]+)"/);
       const mediaMatch = item.match(/media-type="([^"]+)"/);
-      if (idMatch && hrefMatch) manifest.push({ id: idMatch[1], href: hrefMatch[1], mediaType: mediaMatch ? mediaMatch[1] : '' });
-    });
-    let title = 'Document';
-    const titleMatch = opfContent.match(/<dc:title[^>]*>([\s\S]*?)<\/dc:title>/i) || opfContent.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    if (titleMatch) title = stripHtmlTags(titleMatch[1]);
-    const spineMatches = opfContent.match(/<itemref[^>]*>/gi) || [];
-    const manifestMap = new Map(manifest.map(m => [m.id, m]));
-    spineMatches.forEach((itemRef: string) => {
-      const idrefMatch = itemRef.match(/idref="([^"]+)"/);
-      if (!idrefMatch) return;
-      const idref = idrefMatch[1];
-      const item = manifestMap.get(idref);
-      if (item && (item.href.endsWith('.html') || item.href.endsWith('.xhtml') || item.href.endsWith('.htm'))) {
-        try {
-          const chapterPath = opfDir + item.href;
-          let chapterContent = '';
-          try { chapterContent = zip.readAsText(chapterPath); } catch { chapterContent = zip.readAsText(item.href); }
-          let chapterTitle = title;
-          const h1Match = chapterContent.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-          const h2Match = chapterContent.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
-          const h3Match = chapterContent.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
-          if (h1Match) chapterTitle = stripHtmlTags(h1Match[1]);
-          else if (h2Match) chapterTitle = stripHtmlTags(h2Match[1]);
-          else if (h3Match) chapterTitle = stripHtmlTags(h3Match[1]);
-          let bodyMatch = chapterContent.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-          if (!bodyMatch) bodyMatch = chapterContent.match(/<div[^>]*>([\s\S]*?)<\/div>/i);
-          const html = bodyMatch ? bodyMatch[1] : chapterContent;
-          const markdown = parseHtmlToMarkdown(html);
-          chapters.push({ title: chapterTitle, content: markdown, href: item.href });
-        } catch (e) { /* Skip problematic chapters */ }
+      if (idMatch && hrefMatch) {
+        manifest.push({ id: idMatch[1], href: hrefMatch[1], mediaType: mediaMatch ? mediaMatch[1] : '' });
       }
     });
+    
+    // Get title
+    let title = 'Document';
+    const titleMatch = opfContent.match(/<dc:title[^>]*>([\s\S]*?)<\/dc:title>/i) 
+      || opfContent.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    if (titleMatch) title = stripHtmlTags(titleMatch[1]);
+    
+    // Get spine order
+    const manifestMap = new Map(manifest.map(m => [m.id, m]));
+    const spineMatches = opfContent.match(/<itemref[^>]*>/gi) || [];
+    
+    // Process spine items
+    for (const itemRef of spineMatches) {
+      const idrefMatch = itemRef.match(/idref="([^"]+)"/);
+      if (!idrefMatch) continue;
+      
+      const idref = idrefMatch[1];
+      const item = manifestMap.get(idref);
+      
+      if (!item) continue;
+      
+      // Check if it's HTML content
+      const isHtml = item.href.endsWith('.html') || item.href.endsWith('.xhtml') || item.href.endsWith('.htm');
+      if (!isHtml) continue;
+      
+      try {
+        // Try different path combinations
+        let chapterContent = '';
+        const possiblePaths = [
+          opfDir + item.href,
+          item.href,
+          'OEBPS/' + item.href,
+          item.href.replace(/^[^\/]+\//, '')
+        ];
+        
+        for (const chapterPath of possiblePaths) {
+          try {
+            chapterContent = zip.readAsText(chapterPath);
+            if (chapterContent.length > 100) break;
+          } catch { continue; }
+        }
+        
+        if (!chapterContent || chapterContent.length < 100) continue;
+        
+        // Extract title
+        let chapterTitle = title;
+        const h1Match = chapterContent.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+        const h2Match = chapterContent.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+        const h3Match = chapterContent.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
+        const titleMatch = chapterContent.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        
+        if (h1Match) chapterTitle = stripHtmlTags(h1Match[1]);
+        else if (h2Match) chapterTitle = stripHtmlTags(h2Match[1]);
+        else if (h3Match) chapterTitle = stripHtmlTags(h3Match[1]);
+        else if (titleMatch) chapterTitle = stripHtmlTags(titleMatch[1]);
+        
+        // Extract body content
+        let html = '';
+        const bodyMatch = chapterContent.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+        if (bodyMatch) {
+          html = bodyMatch[1];
+        } else {
+          // Try to get content from divs
+          const divMatches = chapterContent.match(/<div[^>]*class="[^"]*content[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+          if (divMatches) html = divMatches[1];
+          else {
+            // Get everything between body tags or main content
+            const mainMatch = chapterContent.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
+            if (mainMatch) html = mainMatch[1];
+            else html = chapterContent;
+          }
+        }
+        
+        const markdown = parseHtmlToMarkdown(html);
+        
+        if (markdown.length > 10) {
+          chapters.push({ title: chapterTitle, content: markdown, href: item.href });
+        }
+      } catch (e) { /* Skip problematic chapters */ }
+    }
+    
+    // If no chapters from spine, try to get all HTML files
+    if (chapters.length === 0) {
+      for (const entry of zipEntries) {
+        const name = entry.entryName.toLowerCase();
+        if (name.endsWith('.html') || name.endsWith('.xhtml')) {
+          try {
+            const content = zip.readAsText(entry.entryName);
+            if (content.length > 500) {
+              let chapterTitle = 'Chapter ' + (chapters.length + 1);
+              const h1Match = content.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+              const h2Match = content.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+              if (h1Match) chapterTitle = stripHtmlTags(h1Match[1]);
+              else if (h2Match) chapterTitle = stripHtmlTags(h2Match[1]);
+              
+              const bodyMatch = content.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+              const html = bodyMatch ? bodyMatch[1] : content;
+              const markdown = parseHtmlToMarkdown(html);
+              
+              if (markdown.length > 10) {
+                chapters.push({ title: chapterTitle, content: markdown, href: entry.entryName });
+              }
+            }
+          } catch {}
+        }
+      }
+    }
+    
     return chapters;
   }
 
