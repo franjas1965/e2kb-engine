@@ -275,50 +275,81 @@ export class EPUBCore {
       } catch (e) { /* Skip problematic chapters */ }
     }
     
-    // If no chapters from spine, try to get all HTML files
-    if (chapters.length === 0) {
-      for (const entry of zipEntries) {
-        const name = entry.entryName.toLowerCase();
-        if (name.endsWith('.html') || name.endsWith('.xhtml')) {
-          // Skip TOC/index files
-          if (name.includes('toc') || name.includes('index') || name.includes('cover') || name.includes('nav')) continue;
-          
-          try {
-            const content = zip.readAsText(entry.entryName);
-            // Need substantial content (not just a TOC)
-            if (content.length > 2000) {
-              let chapterTitle = 'Chapter ' + (chapters.length + 1);
-              const h1Match = content.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-              const h2Match = content.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
-              const h3Match = content.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
-              if (h1Match) chapterTitle = stripHtmlTags(h1Match[1]);
-              else if (h2Match) chapterTitle = stripHtmlTags(h2Match[1]);
-              else if (h3Match) chapterTitle = stripHtmlTags(h3Match[1]);
-              
-              // Extract body or main content
-              let html = '';
-              const bodyMatch = content.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-              if (bodyMatch) {
-                html = bodyMatch[1];
-              } else {
-                // Try section/article tags
-                const sectionMatch = content.match(/<section[^>]*>([\s\S]*?)<\/section>/i);
-                const articleMatch = content.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
-                if (sectionMatch) html = sectionMatch[1];
-                else if (articleMatch) html = articleMatch[1];
-                else html = content;
-              }
-              
-              const markdown = parseHtmlToMarkdown(html);
-              
-              // Only add if has real paragraphs (not just links)
-              const paragraphCount = (markdown.match(/\n\n/g) || []).length;
-              if (markdown.length > 100 && paragraphCount > 2) {
-                chapters.push({ title: chapterTitle, content: markdown, href: entry.entryName });
-              }
+    // Process all HTML files directly - find the largest ones with real content
+    const htmlFiles: { name: string; size: number; content: string }[] = [];
+    
+    for (const entry of zipEntries) {
+      const name = entry.entryName.toLowerCase();
+      if (name.endsWith('.html') || name.endsWith('.xhtml')) {
+        // Skip TOC/index/cover/nav files
+        if (name.includes('toc') || name.includes('index') || name.includes('cover') || name.includes('nav') || name.includes('lista')) continue;
+        
+        try {
+          const content = zip.readAsText(entry.entryName);
+          if (content.length > 5000) {  // Substantial content
+            htmlFiles.push({ name: entry.entryName, size: content.length, content });
+          }
+        } catch {}
+      }
+    }
+    
+    // Sort by name to maintain order
+    htmlFiles.sort((a, b) => a.name.localeCompare(b.name));
+    
+    // Process each file
+    for (const htmlFile of htmlFiles) {
+      let chapterTitle = 'Chapter ' + (chapters.length + 1);
+      
+      // Extract title from h1, h2, h3 or title tag
+      const h1Match = htmlFile.content.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+      const h2Match = htmlFile.content.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+      const h3Match = htmlFile.content.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
+      const titleMatch = htmlFile.content.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+      
+      if (h1Match) chapterTitle = stripHtmlTags(h1Match[1]);
+      else if (h2Match) chapterTitle = stripHtmlTags(h2Match[1]);
+      else if (h3Match) chapterTitle = stripHtmlTags(h3Match[1]);
+      else if (titleMatch) chapterTitle = stripHtmlTags(titleMatch[1]);
+      else {
+        // Use filename as title
+        const baseName = htmlFile.name.replace(/.*\//, '').replace(/\.xhtml?$/, '');
+        chapterTitle = baseName;
+      }
+      
+      // Extract body content
+      let html = '';
+      const bodyMatch = htmlFile.content.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+      if (bodyMatch) {
+        html = bodyMatch[1];
+      } else {
+        // Try section/article tags
+        const sectionMatch = htmlFile.content.match(/<section[^>]*>([\s\S]*?)<\/section>/gi);
+        const articleMatch = htmlFile.content.match(/<article[^>]*>([\s\S]*?)<\/article>/gi);
+        if (sectionMatch && sectionMatch.length > 0) {
+          html = sectionMatch.join('\n');
+        } else if (articleMatch && articleMatch.length > 0) {
+          html = articleMatch.join('\n');
+        } else {
+          // Get content after opening html/body tags
+          const bodyStart = htmlFile.content.indexOf('<body');
+          if (bodyStart !== -1) {
+            const contentStart = htmlFile.content.indexOf('>', bodyStart);
+            if (contentStart !== -1) {
+              html = htmlFile.content.substring(contentStart + 1);
+              const bodyEnd = html.lastIndexOf('</body');
+              if (bodyEnd !== -1) html = html.substring(0, bodyEnd);
             }
-          } catch {}
+          } else {
+            html = htmlFile.content;
+          }
         }
+      }
+      
+      const markdown = parseHtmlToMarkdown(html);
+      
+      // Only add if has real content
+      if (markdown.length > 50) {
+        chapters.push({ title: chapterTitle, content: markdown, href: htmlFile.name });
       }
     }
     
