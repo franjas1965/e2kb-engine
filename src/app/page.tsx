@@ -49,6 +49,17 @@ export default function Home() {
   const handleConvert = async () => {
     if (!file) return;
 
+    // Check file size limit (5MB for serverless functions)
+    const maxSizeMB = 5;
+    const maxSizeBytes = maxSizeMB * 1024 * 1024;
+    if (file.size > maxSizeBytes) {
+      setResult({
+        success: false,
+        message: `El archivo es demasiado grande (${(file.size / 1024 / 1024).toFixed(1)} MB). El límite es ${maxSizeMB} MB. Por favor, usa un EPUB más pequeño o contacta para soporte de archivos grandes.`
+      });
+      return;
+    }
+
     setIsConverting(true);
     setResult(null);
 
@@ -64,8 +75,15 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Conversion failed');
+        let errorMessage = 'Conversion failed';
+        try {
+          const error = await response.json();
+          errorMessage = error.error || errorMessage;
+        } catch {
+          // Response might not be JSON (e.g., "Request Entity Too Large")
+          errorMessage = `Error del servidor (${response.status}). El archivo puede ser demasiado grande.`;
+        }
+        throw new Error(errorMessage);
       }
 
       const blob = await response.blob();

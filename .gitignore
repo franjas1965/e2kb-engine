@@ -13,3 +13,6 @@ yarn-debug.log*
 yarn-error.log*
 .DS_Store
 *.pem
+
+# Local Netlify folder
+.netlify
