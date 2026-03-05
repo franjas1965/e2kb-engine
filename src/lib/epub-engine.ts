@@ -77,53 +77,82 @@ function convertTableToGfm(tableHtml: string): string {
 
 function parseHtmlToMarkdown(html: string): string {
   let md = '';
-  let pos = 0;
-  while (pos < html.length) {
-    if (html.slice(pos, pos + 4).toLowerCase() === '<h1>') {
-      const end = html.indexOf('</h1>', pos);
-      if (end !== -1) { md += '\n# ' + stripHtmlTags(html.slice(pos + 4, end)) + '\n\n'; pos = end + 5; continue; }
+  
+  // Process headings with attributes: <h1 class="...">content</h1>
+  html = html.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, (match, content) => {
+    return `\n# ${stripHtmlTags(content)}\n\n`;
+  });
+  html = html.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, (match, content) => {
+    return `\n## ${stripHtmlTags(content)}\n\n`;
+  });
+  html = html.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, (match, content) => {
+    return `\n### ${stripHtmlTags(content)}\n\n`;
+  });
+  html = html.replace(/<h4[^>]*>([\s\S]*?)<\/h4>/gi, (match, content) => {
+    return `\n#### ${stripHtmlTags(content)}\n\n`;
+  });
+  
+  // Process tables first (before paragraphs)
+  html = html.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (match) => {
+    return convertTableToGfm(match) + '\n';
+  });
+  
+  // Process ordered lists
+  html = html.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (match, content) => {
+    const items = content.match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
+    let result = '\n';
+    items.forEach((item: string, i: number) => {
+      const text = item.replace(/<li[^>]*>/i, '').replace(/<\/li>/i, '');
+      result += `${i + 1}. ${processInlineElements(text)}\n`;
+    });
+    return result + '\n';
+  });
+  
+  // Process unordered lists
+  html = html.replace(/<ul[^>]*>([\s\S]*?)<\/ul>/gi, (match, content) => {
+    const items = content.match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
+    let result = '\n';
+    items.forEach((item: string) => {
+      const text = item.replace(/<li[^>]*>/i, '').replace(/<\/li>/i, '');
+      result += `- ${processInlineElements(text)}\n`;
+    });
+    return result + '\n';
+  });
+  
+  // Process paragraphs with any attributes: <p class="...">content</p>
+  html = html.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, (match, content) => {
+    const text = processInlineElements(content);
+    if (text.trim().length > 0) {
+      return text + '\n\n';
     }
-    if (html.slice(pos, pos + 4).toLowerCase() === '<h2>') {
-      const end = html.indexOf('</h2>', pos);
-      if (end !== -1) { md += '\n## ' + stripHtmlTags(html.slice(pos + 4, end)) + '\n\n'; pos = end + 5; continue; }
-    }
-    if (html.slice(pos, pos + 4).toLowerCase() === '<h3>') {
-      const end = html.indexOf('</h3>', pos);
-      if (end !== -1) { md += '\n### ' + stripHtmlTags(html.slice(pos + 4, end)) + '\n\n'; pos = end + 5; continue; }
-    }
-    if (html.slice(pos, pos + 3).toLowerCase() === '<p>') {
-      const end = html.indexOf('</p>', pos);
-      if (end !== -1) { md += processInlineElements(html.slice(pos + 3, end)) + '\n\n'; pos = end + 4; continue; }
-    }
-    if (html.slice(pos, pos + 4).toLowerCase() === '<ul>') {
-      const end = html.indexOf('</ul>', pos);
-      if (end !== -1) {
-        let listContent = html.slice(pos + 4, end);
-        const items = listContent.match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
-        items.forEach(item => { md += '- ' + stripHtmlTags(processInlineElements(item.replace(/<li[^>]*>/i, '').replace(/<\/li>/i, ''))) + '\n'; });
-        md += '\n'; pos = end + 5; continue;
+    return '';
+  });
+  
+  // Process divs as paragraphs if they contain text
+  html = html.replace(/<div[^>]*>([\s\S]*?)<\/div>/gi, (match, content) => {
+    // Only if content doesn't have nested divs
+    if (!/<div[^>]*>/i.test(content)) {
+      const text = processInlineElements(content);
+      if (text.trim().length > 0) {
+        return text + '\n\n';
       }
     }
-    if (html.slice(pos, pos + 4).toLowerCase() === '<ol>') {
-      const end = html.indexOf('</ol>', pos);
-      if (end !== -1) {
-        let listContent = html.slice(pos + 4, end);
-        const items = listContent.match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
-        items.forEach((item, i) => { md += `${i + 1}. ` + stripHtmlTags(processInlineElements(item.replace(/<li[^>]*>/i, '').replace(/<\/li>/i, ''))) + '\n'; });
-        md += '\n'; pos = end + 5; continue;
-      }
-    }
-    if (html.slice(pos, pos + 7).toLowerCase() === '<table>') {
-      const end = html.indexOf('</table>', pos);
-      if (end !== -1) { md += convertTableToGfm(html.slice(pos, end + 8)) + '\n'; pos = end + 8; continue; }
-    }
-    if (html.slice(pos, pos + 4).toLowerCase() === '<br>' || html.slice(pos, pos + 5).toLowerCase() === '<br/>' || html.slice(pos, pos + 6).toLowerCase() === '<br />') {
-      md += '\n'; pos += html.slice(pos, pos + 6).toLowerCase() === '<br />' ? 6 : (html.slice(pos, pos + 5).toLowerCase() === '<br/>' ? 5 : 4); continue;
-    }
-    if (html.slice(pos, pos + 4).toLowerCase() === '<hr>') { md += '\n---\n\n'; pos += 4; continue; }
-    pos++;
-  }
-  return md;
+    return content;
+  });
+  
+  // Process line breaks
+  html = html.replace(/<br\s*\/?>/gi, '\n');
+  
+  // Process horizontal rules
+  html = html.replace(/<hr[^>]*\/?>/gi, '\n---\n\n');
+  
+  // Clean remaining tags and get text
+  md = stripHtmlTags(html);
+  
+  // Clean up multiple newlines
+  md = md.replace(/\n{3,}/g, '\n\n');
+  
+  return md.trim();
 }
 
 export class EPUBCore {
