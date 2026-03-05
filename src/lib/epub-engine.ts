@@ -280,20 +280,40 @@ export class EPUBCore {
       for (const entry of zipEntries) {
         const name = entry.entryName.toLowerCase();
         if (name.endsWith('.html') || name.endsWith('.xhtml')) {
+          // Skip TOC/index files
+          if (name.includes('toc') || name.includes('index') || name.includes('cover') || name.includes('nav')) continue;
+          
           try {
             const content = zip.readAsText(entry.entryName);
-            if (content.length > 500) {
+            // Need substantial content (not just a TOC)
+            if (content.length > 2000) {
               let chapterTitle = 'Chapter ' + (chapters.length + 1);
               const h1Match = content.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
               const h2Match = content.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+              const h3Match = content.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
               if (h1Match) chapterTitle = stripHtmlTags(h1Match[1]);
               else if (h2Match) chapterTitle = stripHtmlTags(h2Match[1]);
+              else if (h3Match) chapterTitle = stripHtmlTags(h3Match[1]);
               
+              // Extract body or main content
+              let html = '';
               const bodyMatch = content.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-              const html = bodyMatch ? bodyMatch[1] : content;
+              if (bodyMatch) {
+                html = bodyMatch[1];
+              } else {
+                // Try section/article tags
+                const sectionMatch = content.match(/<section[^>]*>([\s\S]*?)<\/section>/i);
+                const articleMatch = content.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
+                if (sectionMatch) html = sectionMatch[1];
+                else if (articleMatch) html = articleMatch[1];
+                else html = content;
+              }
+              
               const markdown = parseHtmlToMarkdown(html);
               
-              if (markdown.length > 10) {
+              // Only add if has real paragraphs (not just links)
+              const paragraphCount = (markdown.match(/\n\n/g) || []).length;
+              if (markdown.length > 100 && paragraphCount > 2) {
                 chapters.push({ title: chapterTitle, content: markdown, href: entry.entryName });
               }
             }
