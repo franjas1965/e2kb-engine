@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  e2kb-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    # Increase memory limit for large EPUB processing
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
