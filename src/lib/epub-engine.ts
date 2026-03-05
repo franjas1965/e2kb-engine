@@ -316,11 +316,20 @@ export class EPUBCore {
         chapterTitle = baseName;
       }
       
-      // Extract body content
+      // Extract body content - handle different structures
       let html = '';
       const bodyMatch = htmlFile.content.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
       if (bodyMatch) {
         html = bodyMatch[1];
+        // If body only contains divs, get the div content
+        const innerDivMatch = html.match(/<div[^>]*>([\s\S]*?)<\/div>/gi);
+        if (innerDivMatch && innerDivMatch.length > 0) {
+          // Join all divs content
+          html = innerDivMatch.map(d => {
+            const content = d.replace(/<div[^>]*>/i, '').replace(/<\/div>/gi, '');
+            return content;
+          }).join('\n');
+        }
       } else {
         // Try section/article tags
         const sectionMatch = htmlFile.content.match(/<section[^>]*>([\s\S]*?)<\/section>/gi);
