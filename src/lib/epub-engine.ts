@@ -425,6 +425,12 @@ export class EPUBCore {
       // Skip non-HTML files
       if (!href.endsWith('.html') && !href.endsWith('.xhtml') && !href.endsWith('.htm')) continue;
       
+      // Skip TOC/nav/cover files
+      const lowerHref = href.toLowerCase();
+      if (lowerHref.includes('toc') || lowerHref.includes('nav') || 
+          lowerHref.includes('cover') || lowerHref.includes('portada') ||
+          lowerHref.includes('primeras')) continue;
+      
       // Skip already processed
       if (processedHrefs.has(href)) continue;
       processedHrefs.add(href);
@@ -447,9 +453,14 @@ export class EPUBCore {
       const titleMatch = content.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
       if (titleMatch) title = stripHtmlTags(titleMatch[1]);
       
-      // Extract body
+      // Extract body and remove nav/toc elements
       const bodyMatch = content.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-      const html = bodyMatch ? bodyMatch[1] : content;
+      let html = bodyMatch ? bodyMatch[1] : content;
+      
+      // Remove nav elements (TOC lists inside content)
+      html = html.replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '');
+      html = html.replace(/<ol[^>]*class="[^"]*toc[^"]*"[^>]*>[\s\S]*?<\/ol>/gi, '');
+      html = html.replace(/<ul[^>]*class="[^"]*toc[^"]*"[^>]*>[\s\S]*?<\/ul>/gi, '');
       
       const markdown = parseHtmlToMarkdown(html);
       
