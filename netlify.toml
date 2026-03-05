@@ -4,3 +4,14 @@
 
 [build.environment]
   NEXT_TURBOPACK = "false"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[functions]
+  node_bundler = "esbuild"
+  
+# Increase function timeout and memory for large EPUB processing
+[functions."*"]
+  memory = 1024
+  timeout = 60
