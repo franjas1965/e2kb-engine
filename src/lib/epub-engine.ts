@@ -119,6 +119,26 @@ function parseHtmlToMarkdown(html: string): string {
     return result + '\n';
   });
   
+  // Process legal document specific classes - TÍTULOS as ## headers
+  html = html.replace(/<p[^>]*class="[^"]*general-titulo[^"]*"[^>]*>([\s\S]*?)<\/p>/gi, (match, content) => {
+    return `\n## ${stripHtmlTags(content)}\n\n`;
+  });
+  
+  // Process ARTÍCULOS as ### headers
+  html = html.replace(/<p[^>]*class="[^"]*general-articulo[^"]*"[^>]*>([\s\S]*?)<\/p>/gi, (match, content) => {
+    return `\n### ${stripHtmlTags(content)}\n\n`;
+  });
+  
+  // Process CAPÍTULOS and SECCIONES as ## headers
+  html = html.replace(/<p[^>]*class="[^"]*general-subseccion[^"]*"[^>]*>([\s\S]*?)<\/p>/gi, (match, content) => {
+    return `\n## ${stripHtmlTags(content)}\n\n`;
+  });
+  
+  // Process real-decreto-ley as # header (main title)
+  html = html.replace(/<p[^>]*class="[^"]*general-real-decreto-ley[^"]*"[^>]*>([\s\S]*?)<\/p>/gi, (match, content) => {
+    return `\n# ${stripHtmlTags(content)}\n\n`;
+  });
+  
   // Process paragraphs with any attributes: <p class="...">content</p>
   html = html.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, (match, content) => {
     const text = processInlineElements(content);
@@ -128,14 +148,11 @@ function parseHtmlToMarkdown(html: string): string {
     return '';
   });
   
-  // Process divs as paragraphs if they contain text
+  // Process divs - extract content but don't add extra formatting
   html = html.replace(/<div[^>]*>([\s\S]*?)<\/div>/gi, (match, content) => {
     // Only if content doesn't have nested divs
     if (!/<div[^>]*>/i.test(content)) {
-      const text = processInlineElements(content);
-      if (text.trim().length > 0) {
-        return text + '\n\n';
-      }
+      return content;
     }
     return content;
   });
@@ -149,8 +166,8 @@ function parseHtmlToMarkdown(html: string): string {
   // Clean remaining tags and get text
   md = stripHtmlTags(html);
   
-  // Clean up multiple newlines
-  md = md.replace(/\n{3,}/g, '\n\n');
+  // Clean up multiple newlines but preserve paragraph structure
+  md = md.replace(/\n{4,}/g, '\n\n\n');
   
   return md.trim();
 }
