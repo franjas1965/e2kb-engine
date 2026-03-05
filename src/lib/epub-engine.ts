@@ -140,42 +140,142 @@ function parseHtmlToMarkdown(html: string): string {
 }
 
 function parseTocFromNcx(ncxContent: string): TocItem[] {
-  const items: TocItem[] = [];
-  
-  // Parse navPoints recursively
-  function parseNavPoints(content: string, level: number): TocItem[] {
-    const result: TocItem[] = [];
-    const navPointRegex = /<navPoint[^>]*>([\s\S]*?)<\/navPoint>/gi;
-    let match;
+  // Find all navPoints with their positions to handle nesting
+  function findNavPoints(content: string): { start: number; end: number; content: string }[] {
+    const points: { start: number; end: number; content: string }[] = [];
+    const openTag = /<navPoint[^>]*>/gi;
+    const closeTag = /<\/navPoint>/gi;
     
-    while ((match = navPointRegex.exec(content)) !== null) {
-      const navPointContent = match[1];
-      
-      // Extract text
-      const textMatch = navPointContent.match(/<text[^>]*>([\s\S]*?)<\/text>/i);
-      const title = textMatch ? stripHtmlTags(textMatch[1]) : '';
-      
-      // Extract src
-      const srcMatch = navPointContent.match(/<content[^>]*src="([^"]+)"/i);
-      const href = srcMatch ? srcMatch[1] : '';
-      
-      if (title && href) {
-        const item: TocItem = { title, href, level, children: [] };
-        
-        // Check for nested navPoints
-        const nestedMatch = navPointContent.match(/<navPoint[^>]*>[\s\S]*<\/navPoint>/gi);
-        if (nestedMatch) {
-          item.children = parseNavPoints(navPointContent, level + 1);
+    let match;
+    const opens: number[] = [];
+    const closes: number[] = [];
+    
+    while ((match = openTag.exec(content)) !== null) {
+      opens.push(match.index);
+    }
+    while ((match = closeTag.exec(content)) !== null) {
+      closes.push(match.index + match[0].length);
+    }
+    
+    // Match opens with closes using stack
+    const stack: number[] = [];
+    const pairs: { start: number; end: number }[] = [];
+    
+    let openIdx = 0;
+    let closeIdx = 0;
+    
+    while (openIdx < opens.length || closeIdx < closes.length) {
+      if (openIdx < opens.length && (closeIdx >= closes.length || opens[openIdx] < closes[closeIdx])) {
+        stack.push(opens[openIdx]);
+        openIdx++;
+      } else if (closeIdx < closes.length) {
+        if (stack.length > 0) {
+          const start = stack.pop()!;
+          pairs.push({ start, end: closes[closeIdx] });
         }
-        
-        result.push(item);
+        closeIdx++;
       }
     }
     
-    return result;
+    // Sort by start position
+    pairs.sort((a, b) => a.start - b.start);
+    
+    for (const pair of pairs) {
+      points.push({
+        start: pair.start,
+        end: pair.end,
+        content: content.substring(pair.start, pair.end)
+      });
+    }
+    
+    return points;
   }
   
-  return parseNavPoints(ncxContent, 0);
+  function parseNavPoint(navPointHtml: string, level: number): TocItem | null {
+    // Extract navLabel > text
+    const textMatch = navPointHtml.match(/<navLabel[^>]*>[\s\S]*?<text[^>]*>([\s\S]*?)<\/text>/i);
+    const title = textMatch ? stripHtmlTags(textMatch[1]) : '';
+    
+    // Extract content src
+    const srcMatch = navPointHtml.match(/<content[^>]*src="([^"]+)"/i);
+    const href = srcMatch ? srcMatch[1] : '';
+    
+    if (!title || !href) return null;
+    
+    const item: TocItem = { title, href, level, children: [] };
+    
+    // Find direct child navPoints (not nested deeper)
+    // Get position after the first </content> tag
+    const contentEndMatch = navPointHtml.match(/<content[^>]*\/?>|<\/content>/i);
+    if (contentEndMatch) {
+      const afterContent = navPointHtml.substring(contentEndMatch.index! + contentEndMatch[0].length);
+      
+      // Find child navPoints
+      const childPoints = findNavPoints(afterContent);
+      
+      // Only process top-level children (those not contained in other navPoints)
+      const topLevelChildren: string[] = [];
+      for (let i = 0; i < childPoints.length; i++) {
+        let isNested = false;
+        for (let j = 0; j < childPoints.length; j++) {
+          if (i !== j && 
+              childPoints[i].start > childPoints[j].start && 
+              childPoints[i].end < childPoints[j].end) {
+            isNested = true;
+            break;
+          }
+        }
+        if (!isNested) {
+          topLevelChildren.push(childPoints[i].content);
+        }
+      }
+      
+      for (const childHtml of topLevelChildren) {
+        const childItem = parseNavPoint(childHtml, level + 1);
+        if (childItem) {
+          item.children.push(childItem);
+        }
+      }
+    }
+    
+    return item;
+  }
+  
+  // Find the navMap
+  const navMapMatch = ncxContent.match(/<navMap[^>]*>([\s\S]*?)<\/navMap>/i);
+  if (!navMapMatch) return [];
+  
+  const navMapContent = navMapMatch[1];
+  
+  // Find all top-level navPoints in navMap
+  const allPoints = findNavPoints(navMapContent);
+  
+  // Filter to only top-level (not nested in other navPoints)
+  const topLevelPoints: string[] = [];
+  for (let i = 0; i < allPoints.length; i++) {
+    let isNested = false;
+    for (let j = 0; j < allPoints.length; j++) {
+      if (i !== j && 
+          allPoints[i].start > allPoints[j].start && 
+          allPoints[i].end < allPoints[j].end) {
+        isNested = true;
+        break;
+      }
+    }
+    if (!isNested) {
+      topLevelPoints.push(allPoints[i].content);
+    }
+  }
+  
+  const result: TocItem[] = [];
+  for (const pointHtml of topLevelPoints) {
+    const item = parseNavPoint(pointHtml, 0);
+    if (item) {
+      result.push(item);
+    }
+  }
+  
+  return result;
 }
 
 function tocToMarkdown(items: TocItem[], indent: number = 0): string {
