@@ -4,6 +4,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+// Configure route segment for large file uploads
+export const runtime = 'nodejs';
+export const maxDuration = 60; // 60 seconds timeout
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -13,6 +17,12 @@ export async function POST(request: NextRequest) {
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    }
+
+    // Check file size (max 50MB)
+    const maxSize = 50 * 1024 * 1024;
+    if (file.size > maxSize) {
+      return NextResponse.json({ error: 'File too large. Maximum size is 50MB.' }, { status: 413 });
     }
 
     if (!file.name.toLowerCase().endsWith('.epub')) {
