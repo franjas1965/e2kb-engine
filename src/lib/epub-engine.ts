@@ -59,13 +59,9 @@ function parseHtmlToMarkdown(html: string): string {
   result = result.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
   result = result.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
   
-  // Process images
-  result = result.replace(/<img[^>]*src="([^"]*)"[^>]*alt="([^"]*)"[^>]*\/?>/gi, '\n\n![$2]($1)\n\n');
-  result = result.replace(/<img[^>]*alt="([^"]*)"[^>]*src="([^"]*)"[^>]*\/?>/gi, '\n\n![$1]($2)\n\n');
-  result = result.replace(/<img[^>]*src="([^"]*)"[^>]*\/?>/gi, (match, src) => {
-    const name = src.split('/').pop() || 'image';
-    return `\n\n![${name}](${src})\n\n`;
-  });
+  // Remove images completely - they are noise for RAG systems
+  // Base64 images especially contaminate embeddings and increase file size
+  result = result.replace(/<img[^>]*>/gi, '');
   
   // Process links - convert to standard markdown links
   result = result.replace(/<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (match, href, text) => {
