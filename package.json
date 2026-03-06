@@ -1,16 +1,21 @@
 {
   "name": "e2kb-engine",
-  "version": "0.1.0",
-  "private": true,
+  "version": "1.0.0",
+  "description": "Convierte archivos EPUB a Markdown estructurado para RAG e IA",
+  "bin": {
+    "e2kb": "./dist/cli/index.js"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:cli": "tsc -p tsconfig.cli.json",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
     "adm-zip": "^0.5.16",
     "archiver": "^7.0.1",
+    "commander": "^14.0.3",
     "epubjs": "^0.3.93",
     "lucide-react": "^0.577.0",
     "next": "16.1.6",
