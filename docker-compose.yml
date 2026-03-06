@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  e2kb-engine:
+  e2kb-web:
     build:
       context: .
       dockerfile: Dockerfile
@@ -9,11 +9,30 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      - DOCLING_SERVICE_URL=http://docling:8000
+    depends_on:
+      docling:
+        condition: service_healthy
     restart: unless-stopped
-    # Increase memory limit for large EPUB processing
     deploy:
       resources:
         limits:
           memory: 2G
         reservations:
           memory: 512M
+
+  docling:
+    build:
+      context: ./docling-service
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G

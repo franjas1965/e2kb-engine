@@ -5,9 +5,10 @@
 ![E2KB Engine](https://img.shields.io/badge/E2KB-Engine-emerald?style=for-the-badge&logo=markdown&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=next.js)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=for-the-badge&logo=typescript&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Ready-blue?style=for-the-badge&logo=docker&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
-**Convierte archivos EPUB en documentos Markdown perfectamente estructurados para sistemas RAG e Inteligencia Artificial**
+**Convierte EPUB, PDF, DOCX, PPTX y más en documentos Markdown perfectamente estructurados para sistemas RAG e Inteligencia Artificial**
 
 [Demo en vivo](https://e2kb-engine.netlify.app) · [Reportar Bug](https://github.com/franjas1965/e2kb-engine/issues) · [Solicitar Feature](https://github.com/franjas1965/e2kb-engine/issues)
 
@@ -212,10 +213,72 @@ Error: "Unexpected token 'R', "Request En"... is not valid JSON"
 
 | Escenario | Solución recomendada |
 |-----------|---------------------|
-| Archivos < 5MB | Usar demo en línea (Netlify/Vercel) |
-| Archivos 5-50MB | Desplegar en servidor propio (Docker) |
-| Archivos > 50MB | Usar CLI local |
-| Procesamiento masivo | Usar CLI con scripts |
+| EPUB < 5MB | Usar demo en línea (Netlify/Vercel) |
+| EPUB > 5MB | Docker local o CLI |
+| PDF, DOCX, PPTX | Docker local (requiere Docling) |
+| Procesamiento masivo | CLI con scripts |
+
+---
+
+## 🐳 Docker: Soporte Multi-Formato (Recomendado)
+
+La versión Docker incluye **Docling** para convertir múltiples formatos:
+
+| Formato | Extensiones | Características |
+|---------|-------------|-----------------|
+| **EPUB** | `.epub` | Motor nativo Node.js |
+| **PDF** | `.pdf` | OCR incluido para escaneados |
+| **Word** | `.docx` | Preserva estructura |
+| **PowerPoint** | `.pptx` | Extrae texto de slides |
+| **Excel** | `.xlsx` | Convierte tablas |
+| **Imágenes** | `.png`, `.jpg` | OCR automático |
+| **HTML** | `.html`, `.htm` | Limpieza de tags |
+
+### Instalación con Docker Desktop
+
+```bash
+# 1. Clonar repositorio
+git clone https://github.com/franjas1965/e2kb-engine.git
+cd e2kb-engine
+
+# 2. Iniciar servicios (Windows)
+start.bat
+
+# 2. Iniciar servicios (Linux/Mac)
+chmod +x start.sh
+./start.sh
+
+# O manualmente:
+docker-compose up -d --build
+```
+
+### Acceso
+
+- **Web UI:** http://localhost:3000
+- **Desde otros PCs de la red:** http://[TU-IP]:3000
+- **API Docling:** http://localhost:8000
+
+### Arquitectura Docker
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Docker Compose                        │
+│  ┌─────────────────┐      ┌─────────────────────────┐   │
+│  │   e2kb-web      │      │   docling               │   │
+│  │   (Next.js)     │◄────▶│   (FastAPI + Docling)   │   │
+│  │   :3000         │      │   :8000                 │   │
+│  └─────────────────┘      └─────────────────────────┘   │
+│         │                           │                    │
+│         │   EPUB → Motor Node.js    │                    │
+│         │   PDF/DOCX → Docling ─────┘                    │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Detener servicios
+
+```bash
+docker-compose down
+```
 
 ---
 

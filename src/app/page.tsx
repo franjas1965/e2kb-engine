@@ -1,7 +1,26 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Upload, FileText, Download, Settings, CheckCircle, Loader2 } from 'lucide-react';
+import { Upload, FileText, Download, Settings, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
+
+// Supported file formats
+const EPUB_EXTENSIONS = ['.epub'];
+const DOCLING_EXTENSIONS = ['.pdf', '.docx', '.pptx', '.xlsx', '.html', '.htm', '.png', '.jpg', '.jpeg'];
+const ALL_EXTENSIONS = [...EPUB_EXTENSIONS, ...DOCLING_EXTENSIONS];
+
+function isValidFileType(filename: string): boolean {
+  const ext = filename.toLowerCase().substring(filename.lastIndexOf('.'));
+  return ALL_EXTENSIONS.includes(ext);
+}
+
+function isEpubFile(filename: string): boolean {
+  return filename.toLowerCase().endsWith('.epub');
+}
+
+function requiresDocling(filename: string): boolean {
+  const ext = filename.toLowerCase().substring(filename.lastIndexOf('.'));
+  return DOCLING_EXTENSIONS.includes(ext);
+}
 
 interface ConversionOptions {
   outputFormat: 'single' | 'multi' | 'optimized';
@@ -36,7 +55,7 @@ export default function Home() {
     e.preventDefault();
     setIsDragging(false);
     const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && droppedFile.name.toLowerCase().endsWith('.epub')) {
+    if (droppedFile && isValidFileType(droppedFile.name)) {
       setFile(droppedFile);
       setResult(null);
     }
@@ -44,7 +63,7 @@ export default function Home() {
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
-    if (selectedFile && selectedFile.name.toLowerCase().endsWith('.epub')) {
+    if (selectedFile && isValidFileType(selectedFile.name)) {
       setFile(selectedFile);
       setResult(null);
     }
@@ -53,13 +72,34 @@ export default function Home() {
   const handleConvert = async () => {
     if (!file) return;
 
+    // Check if file requires Docling (PDF, DOCX, etc.) - only available in Docker deployment
+    if (requiresDocling(file.name)) {
+      // Check if Docling service is available
+      try {
+        const healthCheck = await fetch('/api/docling/health');
+        if (!healthCheck.ok) {
+          setResult({
+            success: false,
+            message: `Los archivos ${file.name.split('.').pop()?.toUpperCase()} solo están soportados en la versión Docker. Esta versión serverless solo soporta EPUB. Usa Docker Desktop o despliega en un VPS para convertir PDF, DOCX, PPTX y otros formatos.`
+          });
+          return;
+        }
+      } catch {
+        setResult({
+          success: false,
+          message: `Los archivos ${file.name.split('.').pop()?.toUpperCase()} solo están soportados en la versión Docker. Esta versión serverless solo soporta EPUB. Usa Docker Desktop o despliega en un VPS para convertir PDF, DOCX, PPTX y otros formatos.`
+        });
+        return;
+      }
+    }
+
     // Check file size limit (5MB for serverless functions)
     const maxSizeMB = 5;
     const maxSizeBytes = maxSizeMB * 1024 * 1024;
     if (file.size > maxSizeBytes) {
       setResult({
         success: false,
-        message: `El archivo es demasiado grande (${(file.size / 1024 / 1024).toFixed(1)} MB). El límite es ${maxSizeMB} MB. Por favor, usa un EPUB más pequeño o contacta para soporte de archivos grandes.`
+        message: `El archivo es demasiado grande (${(file.size / 1024 / 1024).toFixed(1)} MB). El límite es ${maxSizeMB} MB. Por favor, usa un archivo más pequeño o la versión Docker para archivos grandes.`
       });
       return;
     }
@@ -75,7 +115,10 @@ export default function Home() {
       formData.append('maxWords', String(options.maxWords));
       formData.append('maxFiles', String(options.maxFiles));
 
-      const response = await fetch('/api/convert', {
+      // Route to appropriate API based on file type
+      const apiEndpoint = requiresDocling(file.name) ? '/api/convert-docling' : '/api/convert';
+      
+      const response = await fetch(apiEndpoint, {
         method: 'POST',
         body: formData
       });
@@ -96,7 +139,7 @@ export default function Home() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `e2kb-${file.name.replace('.epub', '')}.zip`;
+      a.download = `e2kb-${file.name.substring(0, file.name.lastIndexOf('.'))}.zip`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -141,7 +184,7 @@ export default function Home() {
           >
             <input
               type="file"
-              accept=".epub"
+              accept=".epub,.pdf,.docx,.pptx,.xlsx,.html,.htm,.png,.jpg,.jpeg"
               onChange={handleFileSelect}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             />
@@ -155,18 +198,24 @@ export default function Home() {
                     <p className="text-slate-400 text-sm">
                       {(file.size / 1024 / 1024).toFixed(2)} MB
                     </p>
+                    {requiresDocling(file.name) && (
+                      <p className="text-amber-400 text-xs mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        Requiere versión Docker
+                      </p>
+                    )}
                   </div>
-                  <p className="text-emerald-400 text-sm">Click or drop to replace</p>
+                  <p className="text-emerald-400 text-sm">Click o arrastra para reemplazar</p>
                 </>
               ) : (
                 <>
                   <Upload className="w-16 h-16 text-slate-500" />
                   <div>
                     <p className="text-white font-medium text-lg">
-                      Arrastra tu archivo EPUB aquí
+                      Arrastra tu archivo aquí
                     </p>
                     <p className="text-slate-400 text-sm">
-                      o haz click para seleccionar
+                      EPUB • PDF • DOCX • PPTX • XLSX • Imágenes
                     </p>
                   </div>
                 </>
