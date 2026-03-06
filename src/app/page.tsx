@@ -188,15 +188,9 @@ export default function Home() {
                   </select>
                 </div>
 
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={options.extractImages}
-                    onChange={(e) => setOptions({ ...options, extractImages: e.target.checked })}
-                    className="w-5 h-5 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0"
-                  />
-                  <span className="text-slate-300 text-sm">Extraer imágenes</span>
-                </label>
+                <p className="text-slate-500 text-xs mt-2">
+                  Las imágenes se eliminan automáticamente para optimizar el resultado para sistemas RAG.
+                </p>
               </div>
             </div>
 
