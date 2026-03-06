@@ -664,10 +664,29 @@ export class EPUBCore {
     return new Promise((resolve, reject) => {
       const output = fs.createWriteStream(outputPath);
       const archive = archiver.default('zip', { zlib: { level: 9 } });
+      
       output.on('close', () => resolve(outputPath));
+      output.on('error', reject);
       archive.on('error', reject);
+      archive.on('warning', (err) => {
+        if (err.code !== 'ENOENT') {
+          console.warn('Archive warning:', err);
+        }
+      });
+      
       archive.pipe(output);
-      archive.directory(this.outputDir, false);
+      
+      // Add files individually, excluding the zip file itself
+      const files = fs.readdirSync(this.outputDir);
+      for (const file of files) {
+        if (file.endsWith('.zip')) continue;
+        const filePath = path.join(this.outputDir, file);
+        const stat = fs.statSync(filePath);
+        if (stat.isFile()) {
+          archive.file(filePath, { name: file });
+        }
+      }
+      
       archive.finalize();
     });
   }
