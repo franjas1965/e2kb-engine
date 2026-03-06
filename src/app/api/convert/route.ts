@@ -14,6 +14,8 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file') as File;
     const outputFormat = formData.get('outputFormat') as string || 'multi';
     const extractImages = formData.get('extractImages') !== 'false';
+    const maxWords = parseInt(formData.get('maxWords') as string || '400000', 10);
+    const maxFiles = parseInt(formData.get('maxFiles') as string || '50', 10);
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
@@ -40,9 +42,11 @@ export async function POST(request: NextRequest) {
     fs.writeFileSync(inputPath, buffer);
 
     const result = await convertEPUB(inputPath, outputDir, {
-      outputFormat: outputFormat as 'single' | 'multi',
+      outputFormat: outputFormat as 'single' | 'multi' | 'optimized',
       extractImages,
-      convertWikiLinks: true
+      convertWikiLinks: true,
+      maxWords,
+      maxFiles
     });
 
     const outputBuffer = fs.readFileSync(result.outputPath);

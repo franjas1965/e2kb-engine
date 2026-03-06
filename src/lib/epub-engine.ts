@@ -3,9 +3,18 @@ import * as path from 'path';
 import * as archiver from 'archiver';
 
 interface ConversionOptions {
-  outputFormat: 'single' | 'multi';
+  outputFormat: 'single' | 'multi' | 'optimized';
   extractImages: boolean;
   convertWikiLinks: boolean;
+  maxWords?: number;
+  maxFiles?: number;
+}
+
+interface MergedChapter {
+  title: string;
+  content: string;
+  chapterRange: string;
+  wordCount: number;
 }
 
 interface Chapter {
@@ -28,6 +37,129 @@ interface TocItem {
   href: string;
   level: number;
   children: TocItem[];
+}
+
+function countWords(text: string): number {
+  return text.trim().split(/\s+/).filter(word => word.length > 0).length;
+}
+
+function sanitizeFilename(name: string): string {
+  return name
+    .replace(/[<>:"/\\|?*()[\]{}]/g, '')
+    .replace(/[,;.!¡¿?'"`´]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+}
+
+function generateDescriptiveFilename(
+  docTitle: string,
+  chapters: Chapter[],
+  startIndex: number,
+  endIndex: number,
+  fileIndex: number,
+  totalFiles: number
+): string {
+  const padding = String(totalFiles).length;
+  const indexStr = String(fileIndex + 1).padStart(padding, '0');
+  
+  // Extract document abbreviation (first letters of main words, max 10 chars)
+  const cleanTitle = docTitle.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, '');
+  const docAbbrev = cleanTitle
+    .split(/\s+/)
+    .filter(w => w.length > 2)
+    .map(w => w[0].toUpperCase())
+    .join('')
+    .substring(0, 10) || 'DOC';
+  
+  // Chapter range
+  const rangeStr = startIndex === endIndex 
+    ? `Cap${String(startIndex + 1).padStart(2, '0')}`
+    : `Cap${String(startIndex + 1).padStart(2, '0')}-${String(endIndex + 1).padStart(2, '0')}`;
+  
+  // First chapter title (sanitized and truncated)
+  const firstTitle = sanitizeFilename(chapters[startIndex].title).substring(0, 100);
+  
+  // Build filename
+  let filename = `${indexStr}_${docAbbrev}_${rangeStr}_${firstTitle}`;
+  
+  // Ensure max 254 chars (leaving room for .md extension)
+  if (filename.length > 250) {
+    filename = filename.substring(0, 250);
+  }
+  
+  return filename + '.md';
+}
+
+function mergeChapters(
+  chapters: Chapter[],
+  maxWords: number,
+  maxFiles: number,
+  docTitle: string
+): MergedChapter[] {
+  const merged: MergedChapter[] = [];
+  let currentGroup: Chapter[] = [];
+  let currentWordCount = 0;
+  let startIndex = 0;
+  
+  for (let i = 0; i < chapters.length; i++) {
+    const chapter = chapters[i];
+    const chapterWords = countWords(chapter.content);
+    
+    // If adding this chapter exceeds maxWords, close current group
+    if (currentWordCount + chapterWords > maxWords && currentGroup.length > 0) {
+      // Save current group
+      const endIndex = i - 1;
+      merged.push({
+        title: generateDescriptiveFilename(docTitle, chapters, startIndex, endIndex, merged.length, 0),
+        content: currentGroup.map((ch, idx) => {
+          const separator = idx > 0 ? '\n\n---\n\n' : '';
+          return `${separator}# ${ch.title}\n\n${ch.content}`;
+        }).join(''),
+        chapterRange: `${startIndex + 1}-${endIndex + 1}`,
+        wordCount: currentWordCount
+      });
+      
+      // Start new group
+      currentGroup = [chapter];
+      currentWordCount = chapterWords;
+      startIndex = i;
+    } else {
+      // Add to current group
+      currentGroup.push(chapter);
+      currentWordCount += chapterWords;
+    }
+  }
+  
+  // Don't forget the last group
+  if (currentGroup.length > 0) {
+    const endIndex = chapters.length - 1;
+    merged.push({
+      title: generateDescriptiveFilename(docTitle, chapters, startIndex, endIndex, merged.length, 0),
+      content: currentGroup.map((ch, idx) => {
+        const separator = idx > 0 ? '\n\n---\n\n' : '';
+        return `${separator}# ${ch.title}\n\n${ch.content}`;
+      }).join(''),
+      chapterRange: `${startIndex + 1}-${endIndex + 1}`,
+      wordCount: currentWordCount
+    });
+  }
+  
+  // Update filenames with correct total count
+  const totalFiles = merged.length;
+  merged.forEach((m, idx) => {
+    const parts = m.title.split('_');
+    const padding = String(totalFiles).length;
+    parts[0] = String(idx + 1).padStart(padding, '0');
+    m.title = parts.join('_');
+  });
+  
+  // Check if we exceed maxFiles
+  if (merged.length > maxFiles) {
+    console.warn(`Warning: Generated ${merged.length} files, exceeds maxFiles (${maxFiles}). Consider increasing maxWords.`);
+  }
+  
+  return merged;
 }
 
 function decodeHtmlEntities(text: string): string {
@@ -469,52 +601,60 @@ export class EPUBCore {
   }
 
   private generateMarkdown(metadata: Metadata, toc: TocItem[], chapters: Chapter[]): void {
-    let md = '';
+    // Build metadata block
+    let metadataMd = '';
+    if (metadata.title) metadataMd += `**Title:** ${metadata.title}\n`;
+    if (metadata.language) metadataMd += `**Language:** ${metadata.language}\n`;
+    if (metadata.publisher) metadataMd += `**Publisher:** ${metadata.publisher}\n`;
+    if (metadata.date) metadataMd += `**Date:** ${metadata.date}\n`;
+    if (metadata.identifier) metadataMd += `**Identifier:** ${metadata.identifier}\n`;
+    if (metadata.creator) metadataMd += `**Creator:** ${metadata.creator}\n`;
+    if (metadataMd) metadataMd += '\n';
     
-    // Add metadata
-    if (metadata.title) md += `**Title:** ${metadata.title}\n`;
-    if (metadata.language) md += `**Language:** ${metadata.language}\n`;
-    if (metadata.publisher) md += `**Publisher:** ${metadata.publisher}\n`;
-    if (metadata.date) md += `**Date:** ${metadata.date}\n`;
-    if (metadata.identifier) md += `**Identifier:** ${metadata.identifier}\n`;
-    if (metadata.creator) md += `**Creator:** ${metadata.creator}\n`;
-    
-    if (md) md += '\n';
-    
-    // Add TOC
+    // Build TOC block
+    let tocMd = '';
     if (toc.length > 0) {
-      md += tocToMarkdown(toc);
-      md += '\n';
+      tocMd = tocToMarkdown(toc) + '\n';
     }
     
-    // Add chapters content
-    for (const chapter of chapters) {
-      md += chapter.content + '\n\n';
-    }
-    
-    // Save
     if (this.options.outputFormat === 'single') {
-      fs.writeFileSync(path.join(this.outputDir, 'document.md'), md, 'utf-8');
-    } else {
-      // Save metadata + TOC as index
-      let indexMd = '';
-      if (metadata.title) indexMd += `**Title:** ${metadata.title}\n`;
-      if (metadata.language) indexMd += `**Language:** ${metadata.language}\n`;
-      if (metadata.publisher) indexMd += `**Publisher:** ${metadata.publisher}\n`;
-      if (metadata.date) indexMd += `**Date:** ${metadata.date}\n`;
-      if (metadata.identifier) indexMd += `**Identifier:** ${metadata.identifier}\n`;
-      if (metadata.creator) indexMd += `**Creator:** ${metadata.creator}\n`;
-      indexMd += '\n';
-      if (toc.length > 0) {
-        indexMd += tocToMarkdown(toc);
+      // Single file mode
+      let md = metadataMd + tocMd;
+      for (const chapter of chapters) {
+        md += chapter.content + '\n\n';
       }
+      fs.writeFileSync(path.join(this.outputDir, 'document.md'), md, 'utf-8');
+      
+    } else if (this.options.outputFormat === 'optimized') {
+      // Optimized mode: merge chapters based on limits
+      const maxWords = this.options.maxWords || 400000;
+      const maxFiles = this.options.maxFiles || 50;
+      const docTitle = metadata.title || 'Document';
+      
+      const mergedChapters = mergeChapters(chapters, maxWords, maxFiles, docTitle);
+      
+      // Save index with metadata and TOC
+      const indexMd = metadataMd + tocMd;
+      fs.writeFileSync(path.join(this.outputDir, '00_Index.md'), indexMd, 'utf-8');
+      
+      // Save merged chapters with descriptive filenames
+      mergedChapters.forEach((merged) => {
+        fs.writeFileSync(path.join(this.outputDir, merged.title), merged.content, 'utf-8');
+      });
+      
+      console.log(`📊 Optimized output: ${mergedChapters.length} files from ${chapters.length} chapters`);
+      
+    } else {
+      // Multi mode: one file per chapter
+      const indexMd = metadataMd + tocMd;
       fs.writeFileSync(path.join(this.outputDir, '000_index.md'), indexMd, 'utf-8');
       
-      // Save each chapter
+      const docTitle = metadata.title || 'Document';
+      const totalFiles = chapters.length;
+      
       chapters.forEach((chapter, index) => {
-        const safeTitle = chapter.title.replace(/[<>:"/\\|?*]/g, '_').substring(0, 50);
-        const fileName = `${String(index + 1).padStart(3, '0')}_${safeTitle}.md`;
-        fs.writeFileSync(path.join(this.outputDir, fileName), chapter.content, 'utf-8');
+        const filename = generateDescriptiveFilename(docTitle, chapters, index, index, index, totalFiles);
+        fs.writeFileSync(path.join(this.outputDir, filename), chapter.content, 'utf-8');
       });
     }
   }

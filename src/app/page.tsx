@@ -4,8 +4,10 @@ import { useState, useCallback } from 'react';
 import { Upload, FileText, Download, Settings, CheckCircle, Loader2 } from 'lucide-react';
 
 interface ConversionOptions {
-  outputFormat: 'single' | 'multi';
+  outputFormat: 'single' | 'multi' | 'optimized';
   extractImages: boolean;
+  maxWords: number;
+  maxFiles: number;
 }
 
 export default function Home() {
@@ -14,7 +16,9 @@ export default function Home() {
   const [isConverting, setIsConverting] = useState(false);
   const [options, setOptions] = useState<ConversionOptions>({
     outputFormat: 'multi',
-    extractImages: true
+    extractImages: false,
+    maxWords: 400000,
+    maxFiles: 50
   });
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -68,6 +72,8 @@ export default function Home() {
       formData.append('file', file);
       formData.append('outputFormat', options.outputFormat);
       formData.append('extractImages', String(options.extractImages));
+      formData.append('maxWords', String(options.maxWords));
+      formData.append('maxFiles', String(options.maxFiles));
 
       const response = await fetch('/api/convert', {
         method: 'POST',
@@ -180,13 +186,45 @@ export default function Home() {
                   <label className="text-slate-400 text-sm block mb-2">Formato de salida</label>
                   <select
                     value={options.outputFormat}
-                    onChange={(e) => setOptions({ ...options, outputFormat: e.target.value as 'single' | 'multi' })}
+                    onChange={(e) => setOptions({ ...options, outputFormat: e.target.value as 'single' | 'multi' | 'optimized' })}
                     className="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500"
                   >
-                    <option value="multi">Multi-archivo (por capítulo)</option>
-                    <option value="single">Archivo único</option>
+                    <option value="single">Documento único</option>
+                    <option value="multi">Por capítulos</option>
+                    <option value="optimized">Establecer límites (NotebookLM)</option>
                   </select>
                 </div>
+
+                {options.outputFormat === 'optimized' && (
+                  <>
+                    <div>
+                      <label className="text-slate-400 text-sm block mb-2">Máx. palabras por archivo</label>
+                      <input
+                        type="number"
+                        value={options.maxWords}
+                        onChange={(e) => setOptions({ ...options, maxWords: parseInt(e.target.value) || 400000 })}
+                        className="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+                        min="10000"
+                        max="500000"
+                        step="10000"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 text-sm block mb-2">Máx. archivos a generar</label>
+                      <input
+                        type="number"
+                        value={options.maxFiles}
+                        onChange={(e) => setOptions({ ...options, maxFiles: parseInt(e.target.value) || 50 })}
+                        className="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+                        min="1"
+                        max="100"
+                      />
+                    </div>
+                    <p className="text-emerald-400 text-xs">
+                      Fusiona capítulos para generar el menor número de archivos respetando los límites.
+                    </p>
+                  </>
+                )}
 
                 <p className="text-slate-500 text-xs mt-2">
                   Las imágenes se eliminan automáticamente para optimizar el resultado para sistemas RAG.

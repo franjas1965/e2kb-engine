@@ -141,18 +141,50 @@ npm link
 # 2. Uso desde cualquier carpeta
 e2kb convert documento.epub
 
-# Con opciones
-e2kb convert documento.epub --output ./salida --format single
+# Documento único
+e2kb convert documento.epub --format single
+
+# Por capítulos
+e2kb convert documento.epub --format multi
+
+# Optimizado para NotebookLM (fusión inteligente)
+e2kb convert documento.epub --format optimized --max-words 50000 --max-files 50
 ```
+
+**Formatos de salida:**
+
+| Formato | Descripción |
+|---------|-------------|
+| `single` | Un único archivo Markdown con todo el contenido |
+| `multi` | Un archivo por capítulo |
+| `optimized` | Fusión inteligente de capítulos respetando límites |
 
 **Opciones disponibles:**
 
 | Opción | Descripción | Default |
 |--------|-------------|---------|
 | `--output, -o` | Directorio de salida | `./output` |
-| `--format, -f` | `single` (un archivo) o `multi` (por capítulo) | `single` |
+| `--format, -f` | `single`, `multi` o `optimized` | `single` |
+| `--max-words` | Palabras máximas por archivo (solo `optimized`) | `400000` |
+| `--max-files` | Número máximo de archivos (solo `optimized`) | `50` |
 
-> **Nota:** Las imágenes se eliminan automáticamente del output para optimizar el resultado para sistemas RAG. Las imágenes (especialmente Base64) generan ruido en los embeddings y aumentan innecesariamente el tamaño del archivo.
+**Ejemplo real con CTE (74 capítulos):**
+
+```
+📊 Optimized output: 16 files from 74 chapters
+```
+
+Con `--max-words 50000`, el CTE de 74 capítulos se reduce a **16 archivos**, ideal para NotebookLM (límite 50 fuentes).
+
+**Nombres de archivo descriptivos:**
+
+```
+01_CTEC_Cap01-10_Datos_editoriales.md
+02_CTEC_Cap11-17_Orden_TMA8512021_de_23_de_julio.md
+...
+```
+
+> **Nota:** Las imágenes se eliminan automáticamente para optimizar el resultado para sistemas RAG.
 
 ---
 
