@@ -131,17 +131,18 @@ docker-compose up -d
 Ideal para automatización, pipelines CI/CD o procesamiento masivo.
 
 ```bash
-# Instalación global
-npm install -g e2kb-engine
+# 1. Clonar e instalar
+git clone https://github.com/franjas1965/e2kb-engine.git
+cd e2kb-engine
+npm install
+npm run build:cli
+npm link
 
-# Uso básico
+# 2. Uso desde cualquier carpeta
 e2kb convert documento.epub
 
 # Con opciones
 e2kb convert documento.epub --output ./salida --format single
-
-# Procesamiento masivo
-e2kb convert ./carpeta-epubs/*.epub --output ./markdown
 ```
 
 **Opciones disponibles:**
@@ -149,9 +150,9 @@ e2kb convert ./carpeta-epubs/*.epub --output ./markdown
 | Opción | Descripción | Default |
 |--------|-------------|---------|
 | `--output, -o` | Directorio de salida | `./output` |
-| `--format, -f` | `single` (un archivo) o `multi` (por capítulo) | `multi` |
-| `--images, -i` | Extraer imágenes | `true` |
-| `--toc` | Incluir tabla de contenidos | `true` |
+| `--format, -f` | `single` (un archivo) o `multi` (por capítulo) | `single` |
+
+> **Nota:** Las imágenes se eliminan automáticamente del output para optimizar el resultado para sistemas RAG. Las imágenes (especialmente Base64) generan ruido en los embeddings y aumentan innecesariamente el tamaño del archivo.
 
 ---
 
