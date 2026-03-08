@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   e2kb-web:
     build:
@@ -10,10 +8,18 @@ services:
     environment:
       - NODE_ENV=production
       - DOCLING_SERVICE_URL=http://docling:8000
+      - REDIS_URL=redis://redis:6379
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - BASE_URL=${BASE_URL:-http://localhost:3000}
     depends_on:
-      docling:
-        condition: service_healthy
+      - docling
+      - redis
     restart: unless-stopped
+    volumes:
+      - converted-files:/app/converted
     deploy:
       resources:
         limits:
@@ -29,6 +35,9 @@ services:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
+      - OLLAMA_URL=http://ollama:11434
+    depends_on:
+      - ollama
     restart: unless-stopped
     deploy:
       resources:
@@ -36,3 +45,31 @@ services:
           memory: 4G
         reservations:
           memory: 1G
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  converted-files:
+  ollama-models:

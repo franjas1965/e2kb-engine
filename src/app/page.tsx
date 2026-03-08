@@ -22,6 +22,15 @@ function requiresDocling(filename: string): boolean {
   return DOCLING_EXTENSIONS.includes(ext);
 }
 
+async function checkDoclingAvailable(): Promise<boolean> {
+  try {
+    const response = await fetch('/api/docling/health');
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 interface ConversionOptions {
   outputFormat: 'single' | 'multi' | 'optimized';
   extractImages: boolean;
@@ -40,6 +49,9 @@ export default function Home() {
     maxFiles: 50
   });
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [email, setEmail] = useState('');
+  const [emailSubmitted, setEmailSubmitted] = useState(false);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -93,19 +105,31 @@ export default function Home() {
       }
     }
 
-    // Check file size limit (5MB for serverless functions)
-    const maxSizeMB = 5;
-    const maxSizeBytes = maxSizeMB * 1024 * 1024;
-    if (file.size > maxSizeBytes) {
-      setResult({
-        success: false,
-        message: `El archivo es demasiado grande (${(file.size / 1024 / 1024).toFixed(1)} MB). El límite es ${maxSizeMB} MB. Por favor, usa un archivo más pequeño o la versión Docker para archivos grandes.`
-      });
+    // Check file size limit (5MB for serverless functions, no limit for Docker)
+    // If Docling health check passed above, we're in Docker mode - skip size limit
+    const isDockerMode = requiresDocling(file.name) || await checkDoclingAvailable();
+    if (!isDockerMode) {
+      const maxSizeMB = 5;
+      const maxSizeBytes = maxSizeMB * 1024 * 1024;
+      if (file.size > maxSizeBytes) {
+        setResult({
+          success: false,
+          message: `El archivo es demasiado grande (${(file.size / 1024 / 1024).toFixed(1)} MB). El límite es ${maxSizeMB} MB. Por favor, usa un archivo más pequeño o la versión Docker para archivos grandes.`
+        });
+        return;
+      }
+    }
+
+    // For PDF files, show email modal first (unless already submitted)
+    const useDocling = requiresDocling(file.name);
+    if (useDocling && !emailSubmitted && !showEmailModal) {
+      setShowEmailModal(true);
       return;
     }
 
     setIsConverting(true);
     setResult(null);
+    setShowEmailModal(false);
 
     try {
       const formData = new FormData();
@@ -116,7 +140,15 @@ export default function Home() {
       formData.append('maxFiles', String(options.maxFiles));
 
       // Route to appropriate API based on file type
-      const apiEndpoint = requiresDocling(file.name) ? '/api/convert-docling' : '/api/convert';
+      const apiEndpoint = useDocling ? '/api/convert-docling' : '/api/convert';
+      
+      // Use async mode for Docling to avoid timeout issues
+      if (useDocling) {
+        formData.append('async', 'true');
+        if (email) {
+          formData.append('email', email);
+        }
+      }
       
       const response = await fetch(apiEndpoint, {
         method: 'POST',
@@ -129,12 +161,80 @@ export default function Home() {
           const error = await response.json();
           errorMessage = error.error || errorMessage;
         } catch {
-          // Response might not be JSON (e.g., "Request Entity Too Large")
           errorMessage = `Error del servidor (${response.status}). El archivo puede ser demasiado grande.`;
         }
         throw new Error(errorMessage);
       }
 
+      // For async Docling conversions, poll for status or wait for email
+      if (useDocling) {
+        const data = await response.json();
+        const { jobId, emailNotification } = data;
+        
+        // If email notification is enabled, show success and don't poll
+        if (emailNotification && email) {
+          setResult({ 
+            success: true, 
+            message: `✅ Conversión iniciada. Recibirás un email en ${email} cuando esté lista. Puedes cerrar esta página.` 
+          });
+          setEmailSubmitted(false);
+          setEmail('');
+          return;
+        }
+        
+        setResult({ success: true, message: 'Procesando documento... Por favor espera.' });
+        
+        // Poll for completion
+        let attempts = 0;
+        const maxAttempts = 120; // 10 minutes with 5 second intervals
+        
+        while (attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+          
+          const statusResponse = await fetch(`/api/convert-docling/status?jobId=${jobId}`);
+          
+          if (!statusResponse.ok) {
+            const error = await statusResponse.json();
+            throw new Error(error.error || 'Error checking conversion status');
+          }
+          
+          const contentType = statusResponse.headers.get('content-type');
+          
+          // If we get a ZIP file, download it
+          if (contentType?.includes('application/zip')) {
+            const blob = await statusResponse.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `e2kb-${file.name.substring(0, file.name.lastIndexOf('.'))}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            setResult({ success: true, message: '¡Conversión completada!' });
+            return;
+          }
+          
+          // Otherwise, check JSON status
+          const status = await statusResponse.json();
+          
+          if (status.status === 'completed') {
+            // Fetch the file again (status endpoint returns ZIP when completed)
+            continue;
+          } else if (status.status === 'error') {
+            throw new Error(status.error || 'Conversion failed');
+          } else {
+            // Still processing, update progress message
+            setResult({ success: true, message: `Procesando: ${status.progress || 'Por favor espera...'}` });
+          }
+          
+          attempts++;
+        }
+        
+        throw new Error('Timeout: La conversión tardó demasiado. Intenta con un archivo más pequeño.');
+      }
+
+      // Synchronous mode for EPUB files
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -145,7 +245,7 @@ export default function Home() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
-      setResult({ success: true, message: 'Conversion completed successfully!' });
+      setResult({ success: true, message: '¡Conversión completada!' });
     } catch (error) {
       setResult({
         success: false,
@@ -344,6 +444,49 @@ export default function Home() {
           Soporta EPUB legales y técnicos • Código Penal • CTE • Y más
         </p>
       </div>
+
+      {/* Email Modal for PDF conversions */}
+      {showEmailModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-2xl p-6 max-w-md w-full border border-slate-700">
+            <h2 className="text-xl font-bold text-white mb-2">📧 Notificación por Email</h2>
+            <p className="text-slate-400 mb-4">
+              La conversión de documentos PDF puede tardar varios minutos. 
+              Introduce tu email para recibir una notificación cuando esté lista, 
+              o continúa sin email para esperar en esta página.
+            </p>
+            
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="tu-email@ejemplo.com"
+              className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 mb-4"
+            />
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setEmailSubmitted(true);
+                  handleConvert();
+                }}
+                className="flex-1 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white rounded-xl font-medium transition-all"
+              >
+                {email ? 'Convertir y notificar' : 'Convertir sin email'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowEmailModal(false);
+                  setEmail('');
+                }}
+                className="px-4 py-3 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-xl font-medium transition-all"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,6 +3,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as archiver from 'archiver';
+import * as crypto from 'crypto';
+import axios from 'axios';
+import FormDataNode from 'form-data';
+import { sendConversionCompleteEmail, sendConversionErrorEmail } from '@/lib/email';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // 5 minutes for large documents
@@ -15,6 +19,37 @@ interface DoclingResponse {
   error?: string;
 }
 
+// In-memory job storage
+const jobs = new Map<string, {
+  status: 'processing' | 'completed' | 'error';
+  progress?: string;
+  error?: string;
+  zipPath?: string;
+  filename?: string;
+  email?: string;
+  createdAt: number;
+}>();
+
+// Export for status route
+export { jobs };
+
+// Cleanup old jobs periodically (jobs older than 1 hour)
+if (typeof setInterval !== 'undefined') {
+  setInterval(() => {
+    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    for (const [jobId, job] of jobs.entries()) {
+      if (job.createdAt < oneHourAgo) {
+        if (job.zipPath) {
+          try {
+            fs.rmSync(path.dirname(job.zipPath), { recursive: true, force: true });
+          } catch {}
+        }
+        jobs.delete(jobId);
+      }
+    }
+  }, 5 * 60 * 1000);
+}
+
 export async function POST(request: NextRequest) {
   const doclingUrl = process.env.DOCLING_SERVICE_URL || 'http://localhost:8000';
   
@@ -24,85 +59,43 @@ export async function POST(request: NextRequest) {
     const outputFormat = formData.get('outputFormat') as string || 'single';
     const maxWords = parseInt(formData.get('maxWords') as string || '400000', 10);
     const maxFiles = parseInt(formData.get('maxFiles') as string || '50', 10);
+    const async = formData.get('async') === 'true';
+    const email = formData.get('email') as string | null;
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    // Forward file to Docling service
-    const doclingFormData = new FormData();
-    doclingFormData.append('file', file);
-
-    const doclingResponse = await fetch(`${doclingUrl}/convert`, {
-      method: 'POST',
-      body: doclingFormData,
-    });
-
-    if (!doclingResponse.ok) {
-      const error = await doclingResponse.text();
-      return NextResponse.json({ error: `Docling conversion failed: ${error}` }, { status: 500 });
-    }
-
-    const result: DoclingResponse = await doclingResponse.json();
-
-    if (!result.success || !result.markdown) {
-      return NextResponse.json({ error: result.error || 'Conversion failed' }, { status: 500 });
-    }
-
-    // Create temp directory for output
-    const tempDir = path.join(os.tmpdir(), `e2kb-docling-${Date.now()}`);
-    const outputDir = path.join(tempDir, 'output');
-    fs.mkdirSync(outputDir, { recursive: true });
-
-    const title = result.title || file.name.substring(0, file.name.lastIndexOf('.'));
-    const markdown = result.markdown;
-
-    if (outputFormat === 'single') {
-      // Single file output
-      const filename = `${sanitizeFilename(title)}.md`;
-      fs.writeFileSync(path.join(outputDir, filename), markdown, 'utf-8');
-    } else if (outputFormat === 'optimized') {
-      // Split by headers and merge based on word limits
-      const chapters = splitByHeaders(markdown, title);
-      const merged = mergeChapters(chapters, maxWords, maxFiles, title);
+    // For async mode, start background processing and return job ID immediately
+    if (async) {
+      const jobId = crypto.randomUUID();
+      const fileName = file.name;
+      const fileBuffer = Buffer.from(await file.arrayBuffer());
       
-      // Write index
-      fs.writeFileSync(path.join(outputDir, '00_Index.md'), `# ${title}\n\nConverted from: ${file.name}\n`, 'utf-8');
-      
-      // Write merged chapters
-      merged.forEach((chapter, index) => {
-        const filename = `${String(index + 1).padStart(2, '0')}_${sanitizeFilename(chapter.title).substring(0, 100)}.md`;
-        fs.writeFileSync(path.join(outputDir, filename), chapter.content, 'utf-8');
+      jobs.set(jobId, {
+        status: 'processing',
+        progress: 'Starting conversion...',
+        email: email || undefined,
+        createdAt: Date.now()
       });
-    } else {
-      // Multi-file: split by headers
-      const chapters = splitByHeaders(markdown, title);
-      
-      // Write index
-      fs.writeFileSync(path.join(outputDir, '00_Index.md'), `# ${title}\n\nConverted from: ${file.name}\n`, 'utf-8');
-      
-      // Write each chapter
-      chapters.forEach((chapter, index) => {
-        const filename = `${String(index + 1).padStart(3, '0')}_${sanitizeFilename(chapter.title).substring(0, 50)}.md`;
-        fs.writeFileSync(path.join(outputDir, filename), chapter.content, 'utf-8');
+
+      // Start background processing (don't await)
+      processDocumentAsync(jobId, fileBuffer, fileName, outputFormat, maxWords, maxFiles, doclingUrl, email || undefined);
+
+      const message = email 
+        ? `Conversión iniciada. Recibirás un email en ${email} cuando esté lista.`
+        : 'Conversion started. Poll /api/convert-docling/status?jobId=' + jobId + ' for progress.';
+
+      return NextResponse.json({ 
+        jobId, 
+        status: 'processing',
+        message,
+        emailNotification: !!email
       });
     }
 
-    // Create ZIP archive
-    const zipPath = path.join(tempDir, 'e2kb-output.zip');
-    await createZip(outputDir, zipPath);
-
-    const zipBuffer = fs.readFileSync(zipPath);
-
-    // Cleanup
-    fs.rmSync(tempDir, { recursive: true, force: true });
-
-    return new NextResponse(zipBuffer, {
-      headers: {
-        'Content-Type': 'application/zip',
-        'Content-Disposition': `attachment; filename="e2kb-${file.name.substring(0, file.name.lastIndexOf('.'))}.zip"`
-      }
-    });
+    // Synchronous mode (original behavior with extended timeout)
+    return await processDocumentSync(file, outputFormat, maxWords, maxFiles, doclingUrl);
 
   } catch (error) {
     console.error('Docling conversion error:', error);
@@ -111,6 +104,198 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+async function processDocumentAsync(
+  jobId: string,
+  fileBuffer: Buffer,
+  fileName: string,
+  outputFormat: string,
+  maxWords: number,
+  maxFiles: number,
+  doclingUrl: string,
+  email?: string
+) {
+  try {
+    jobs.set(jobId, { ...jobs.get(jobId)!, progress: 'Sending to Docling service...' });
+
+    // Use axios with form-data for reliable timeout control
+    const formData = new FormDataNode();
+    formData.append('file', fileBuffer, { filename: fileName });
+
+    const axiosResponse = await axios.post(`${doclingUrl}/convert`, formData, {
+      headers: formData.getHeaders(),
+      timeout: 30 * 60 * 1000, // 30 minutes
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+    });
+
+    if (axiosResponse.status !== 200) {
+      jobs.set(jobId, { ...jobs.get(jobId)!, status: 'error', error: `Docling conversion failed: ${axiosResponse.statusText}` });
+      return;
+    }
+
+    jobs.set(jobId, { ...jobs.get(jobId)!, progress: 'Processing markdown output...' });
+
+    const result: DoclingResponse = axiosResponse.data;
+
+    if (!result.success || !result.markdown) {
+      jobs.set(jobId, { ...jobs.get(jobId)!, status: 'error', error: result.error || 'Conversion failed' });
+      return;
+    }
+
+    // Create temp directory for output
+    const tempDir = path.join(os.tmpdir(), `e2kb-docling-${jobId}`);
+    const outputDir = path.join(tempDir, 'output');
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    const title = result.title || fileName.substring(0, fileName.lastIndexOf('.'));
+    const markdown = result.markdown;
+
+    jobs.set(jobId, { ...jobs.get(jobId)!, progress: 'Creating output files...' });
+
+    if (outputFormat === 'single') {
+      const filename = `${sanitizeFilename(title)}.md`;
+      fs.writeFileSync(path.join(outputDir, filename), markdown, 'utf-8');
+    } else if (outputFormat === 'optimized') {
+      const chapters = splitByHeaders(markdown, title);
+      const merged = mergeChapters(chapters, maxWords, maxFiles, title);
+      fs.writeFileSync(path.join(outputDir, '00_Index.md'), `# ${title}\n\nConverted from: ${fileName}\n`, 'utf-8');
+      merged.forEach((chapter, index) => {
+        const filename = `${String(index + 1).padStart(2, '0')}_${sanitizeFilename(chapter.title).substring(0, 100)}.md`;
+        fs.writeFileSync(path.join(outputDir, filename), chapter.content, 'utf-8');
+      });
+    } else {
+      const chapters = splitByHeaders(markdown, title);
+      fs.writeFileSync(path.join(outputDir, '00_Index.md'), `# ${title}\n\nConverted from: ${fileName}\n`, 'utf-8');
+      chapters.forEach((chapter, index) => {
+        const filename = `${String(index + 1).padStart(3, '0')}_${sanitizeFilename(chapter.title).substring(0, 50)}.md`;
+        fs.writeFileSync(path.join(outputDir, filename), chapter.content, 'utf-8');
+      });
+    }
+
+    jobs.set(jobId, { ...jobs.get(jobId)!, progress: 'Creating ZIP archive...' });
+
+    // Create ZIP archive
+    const zipPath = path.join(tempDir, 'e2kb-output.zip');
+    await createZip(outputDir, zipPath);
+
+    const outputFilename = `e2kb-${fileName.substring(0, fileName.lastIndexOf('.'))}.zip`;
+
+    jobs.set(jobId, {
+      status: 'completed',
+      zipPath,
+      filename: outputFilename,
+      email,
+      createdAt: jobs.get(jobId)!.createdAt
+    });
+
+    console.log(`Job ${jobId} completed successfully`);
+
+    // Send email notification if email was provided
+    if (email) {
+      const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+      const downloadUrl = `${baseUrl}/api/convert-docling/status?jobId=${jobId}`;
+      await sendConversionCompleteEmail(email, fileName, downloadUrl);
+    }
+
+  } catch (error) {
+    console.error(`Job ${jobId} failed:`, error);
+    const errorMessage = error instanceof Error ? error.message : 'Conversion failed';
+    
+    jobs.set(jobId, {
+      ...jobs.get(jobId)!,
+      status: 'error',
+      error: errorMessage
+    });
+
+    // Send error email if email was provided
+    if (email) {
+      await sendConversionErrorEmail(email, fileName, errorMessage);
+    }
+  }
+}
+
+async function processDocumentSync(
+  file: File,
+  outputFormat: string,
+  maxWords: number,
+  maxFiles: number,
+  doclingUrl: string
+): Promise<NextResponse> {
+  // Forward file to Docling service with extended timeout for large PDFs
+  const doclingFormData = new FormData();
+  doclingFormData.append('file', file);
+
+  // Create AbortController with 10 minute timeout for large document processing
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000); // 10 minutes
+
+  let doclingResponse: Response;
+  try {
+    doclingResponse = await fetch(`${doclingUrl}/convert`, {
+      method: 'POST',
+      body: doclingFormData,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (!doclingResponse.ok) {
+    const error = await doclingResponse.text();
+    return NextResponse.json({ error: `Docling conversion failed: ${error}` }, { status: 500 });
+  }
+
+  const result: DoclingResponse = await doclingResponse.json();
+
+  if (!result.success || !result.markdown) {
+    return NextResponse.json({ error: result.error || 'Conversion failed' }, { status: 500 });
+  }
+
+  // Create temp directory for output
+  const tempDir = path.join(os.tmpdir(), `e2kb-docling-${Date.now()}`);
+  const outputDir = path.join(tempDir, 'output');
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  const title = result.title || file.name.substring(0, file.name.lastIndexOf('.'));
+  const markdown = result.markdown;
+
+  if (outputFormat === 'single') {
+    const filename = `${sanitizeFilename(title)}.md`;
+    fs.writeFileSync(path.join(outputDir, filename), markdown, 'utf-8');
+  } else if (outputFormat === 'optimized') {
+    const chapters = splitByHeaders(markdown, title);
+    const merged = mergeChapters(chapters, maxWords, maxFiles, title);
+    fs.writeFileSync(path.join(outputDir, '00_Index.md'), `# ${title}\n\nConverted from: ${file.name}\n`, 'utf-8');
+    merged.forEach((chapter, index) => {
+      const filename = `${String(index + 1).padStart(2, '0')}_${sanitizeFilename(chapter.title).substring(0, 100)}.md`;
+      fs.writeFileSync(path.join(outputDir, filename), chapter.content, 'utf-8');
+    });
+  } else {
+    const chapters = splitByHeaders(markdown, title);
+    fs.writeFileSync(path.join(outputDir, '00_Index.md'), `# ${title}\n\nConverted from: ${file.name}\n`, 'utf-8');
+    chapters.forEach((chapter, index) => {
+      const filename = `${String(index + 1).padStart(3, '0')}_${sanitizeFilename(chapter.title).substring(0, 50)}.md`;
+      fs.writeFileSync(path.join(outputDir, filename), chapter.content, 'utf-8');
+    });
+  }
+
+  // Create ZIP archive
+  const zipPath = path.join(tempDir, 'e2kb-output.zip');
+  await createZip(outputDir, zipPath);
+
+  const zipBuffer = fs.readFileSync(zipPath);
+
+  // Cleanup
+  fs.rmSync(tempDir, { recursive: true, force: true });
+
+  return new NextResponse(zipBuffer, {
+    headers: {
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="e2kb-${file.name.substring(0, file.name.lastIndexOf('.'))}.zip"`
+    }
+  });
 }
 
 function sanitizeFilename(name: string): string {

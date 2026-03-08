@@ -3,16 +3,35 @@
 <div align="center">
 
 ![E2KB Engine](https://img.shields.io/badge/E2KB-Engine-emerald?style=for-the-badge&logo=markdown&logoColor=white)
-![Next.js](https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=next.js)
+![Next.js](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=for-the-badge&logo=typescript&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue?style=for-the-badge&logo=docker&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-VLM-purple?style=for-the-badge&logo=ollama&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
 **Convierte EPUB, PDF, DOCX, PPTX y más en documentos Markdown perfectamente estructurados para sistemas RAG e Inteligencia Artificial**
 
+**🆕 Con IA de Visión (VLM) para transcribir fórmulas matemáticas, tablas e imágenes**
+
 [Demo en vivo](https://e2kb-engine.netlify.app) · [Reportar Bug](https://github.com/franjas1965/e2kb-engine/issues) · [Solicitar Feature](https://github.com/franjas1965/e2kb-engine/issues)
 
 </div>
+
+---
+
+## 📋 Tabla de Contenidos
+
+- [El Problema que Resolvemos](#-el-problema-que-resolvemos)
+- [La Solución: E2KB Engine](#-la-solución-e2kb-engine)
+- [Arquitectura del Sistema](#-arquitectura-del-sistema)
+- [Instalación con Docker](#-instalación-con-docker)
+- [Enriquecimiento con IA de Visión (VLM)](#-enriquecimiento-con-ia-de-visión-vlm)
+- [Sistema de Notificaciones por Email](#-sistema-de-notificaciones-por-email)
+- [Opciones de Despliegue](#-opciones-de-despliegue)
+- [CLI (Línea de Comandos)](#-cli-línea-de-comandos)
+- [API Reference](#-api-reference)
+- [Desarrollo Local](#-desarrollo-local)
+- [Contribuir](#-contribuir)
 
 ---
 
@@ -258,26 +277,267 @@ docker-compose up -d --build
 - **Desde otros PCs de la red:** http://[TU-IP]:3000
 - **API Docling:** http://localhost:8000
 
-### Arquitectura Docker
+### Arquitectura Docker Completa
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Docker Compose                        │
-│  ┌─────────────────┐      ┌─────────────────────────┐   │
-│  │   e2kb-web      │      │   docling               │   │
-│  │   (Next.js)     │◄────▶│   (FastAPI + Docling)   │   │
-│  │   :3000         │      │   :8000                 │   │
-│  └─────────────────┘      └─────────────────────────┘   │
-│         │                           │                    │
-│         │   EPUB → Motor Node.js    │                    │
-│         │   PDF/DOCX → Docling ─────┘                    │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           Docker Compose - E2KB Engine                        │
+│                                                                               │
+│  ┌─────────────────┐    ┌─────────────────────────┐    ┌─────────────────┐   │
+│  │   e2kb-web      │    │   docling               │    │   ollama        │   │
+│  │   (Next.js)     │◄──▶│   (FastAPI + Docling)   │◄──▶│   (VLM GPU)     │   │
+│  │   :3000         │    │   :8000                 │    │   :11434        │   │
+│  └────────┬────────┘    └─────────────────────────┘    └─────────────────┘   │
+│           │                         │                           │             │
+│           │                         │   Extrae imágenes         │             │
+│           │                         │   de fórmulas/tablas      │             │
+│           │                         │         │                 │             │
+│           │                         │         └────────────────▶│             │
+│           │                         │           Describe con    │             │
+│           │                         │           IA de Visión    │             │
+│           │                                                                   │
+│  ┌────────▼────────┐                                                         │
+│  │   redis         │    Cola de trabajos + Estado de conversiones            │
+│  │   :6379         │                                                         │
+│  └─────────────────┘                                                         │
+│                                                                               │
+│  Flujo: EPUB → Motor Node.js                                                 │
+│         PDF/DOCX → Docling → OCR → VLM (fórmulas) → Markdown enriquecido    │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Servicios
+
+| Servicio | Puerto | Descripción |
+|----------|--------|-------------|
+| **e2kb-web** | 3000 | Frontend Next.js + API de conversión |
+| **docling** | 8000 | Motor de conversión Docling (PDF, DOCX, etc.) |
+| **ollama** | 11434 | Servidor de modelos de IA (VLM para imágenes) |
+| **redis** | 6379 | Cola de trabajos y almacenamiento de estado |
 
 ### Detener servicios
 
 ```bash
 docker-compose down
+```
+
+---
+
+## 🤖 Enriquecimiento con IA de Visión (VLM)
+
+### ¿Por qué necesitamos VLM?
+
+Cuando convertimos documentos técnicos (normativas, manuales de ingeniería, papers científicos), encontramos un problema crítico:
+
+> **Las fórmulas matemáticas, tablas complejas y diagramas aparecen como imágenes en el PDF, no como texto.**
+
+El OCR tradicional no puede interpretar estas imágenes. El resultado es un Markdown con "huecos" donde deberían estar las fórmulas:
+
+```markdown
+## 2.2 Molestias intensas (MI)
+
+Para calcular el RA, deberán utilizarse las siguientes relaciones:
+
+para el ruido vial:
+
+para el ruido ferroviario:    ← ¡Falta la fórmula!
+
+para el ruido de aeronaves:
+```
+
+### La solución: Vision Language Models (VLM)
+
+E2KB Engine integra **Ollama** con modelos de visión (llava:13b) que pueden:
+
+1. **Detectar** imágenes de fórmulas, tablas y diagramas
+2. **Analizar** el contenido visual
+3. **Transcribir** fórmulas a LaTeX
+4. **Describir** tablas en formato Markdown
+5. **Explicar** diagramas y planos en lenguaje natural
+
+### Resultado con VLM
+
+```markdown
+## 2.2 Molestias intensas (MI)
+
+Para calcular el RA, deberán utilizarse las siguientes relaciones:
+
+para el ruido vial:
+
+$$R_{A_{vial}} = (79.927\% - 3.1162 \cdot L_{den} + 0.0342 \cdot L_{den}^2) / 100$$
+
+> **Fórmula 4**: Calcula el riesgo absoluto para molestias intensas por ruido vial, 
+> donde $L_{den}$ es el nivel de ruido día-tarde-noche en decibelios.
+
+para el ruido ferroviario:
+
+$$R_{A_{ferr}} = (38.159\% - 2.46538 \cdot L_{den} + 0.0285 \cdot L_{den}^2) / 100$$
+```
+
+### Configuración del VLM
+
+#### 1. Requisitos de hardware
+
+| Recurso | Mínimo | Recomendado |
+|---------|--------|-------------|
+| **GPU NVIDIA** | 6GB VRAM | 12GB VRAM |
+| **RAM** | 16GB | 32GB |
+| **Disco** | 20GB | 50GB |
+
+#### 2. Modelos disponibles
+
+| Modelo | VRAM | Velocidad | Calidad |
+|--------|------|-----------|---------|
+| `llava:7b` | 4GB | Rápido | Buena |
+| `llava:13b` | 8GB | Medio | Muy buena |
+| `llava:34b` | 20GB | Lento | Excelente |
+
+#### 3. Descargar modelo
+
+```bash
+# El modelo se descarga automáticamente, pero puedes forzarlo:
+docker exec e2kb-engine-ollama-1 ollama pull llava:13b
+
+# Verificar modelos disponibles:
+docker exec e2kb-engine-ollama-1 ollama list
+```
+
+#### 4. Cambiar modelo (opcional)
+
+Edita `docker-compose.yml` y añade la variable de entorno:
+
+```yaml
+docling:
+  environment:
+    - VLM_MODEL=llava:34b  # Cambiar a modelo más potente
+```
+
+### Verificar estado del VLM
+
+```bash
+# Desde el navegador o curl:
+curl http://localhost:8000/vlm/status
+
+# Respuesta esperada:
+{
+  "status": "available",
+  "ollama_url": "http://ollama:11434",
+  "configured_model": "llava:13b",
+  "model_available": true,
+  "message": "Ready for VLM enrichment"
+}
+```
+
+### ¿Cómo funciona internamente?
+
+```
+PDF con fórmulas
+       │
+       ▼
+┌──────────────────┐
+│  Docling OCR     │  Extrae texto + detecta imágenes
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Clasificador    │  ¿Es fórmula, tabla o diagrama?
+└────────┬─────────┘
+         │
+    ┌────┴────┬────────────┐
+    ▼         ▼            ▼
+[Fórmula] [Tabla]    [Diagrama]
+    │         │            │
+    ▼         ▼            ▼
+┌──────────────────────────────┐
+│  Ollama VLM (llava:13b)      │
+│  - Fórmulas → LaTeX          │
+│  - Tablas → Markdown         │
+│  - Diagramas → Descripción   │
+└──────────────────────────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Markdown        │  Texto + fórmulas + descripciones
+│  Enriquecido     │
+└──────────────────┘
+```
+
+---
+
+## 📧 Sistema de Notificaciones por Email
+
+### ¿Por qué notificaciones por email?
+
+Los documentos grandes (100+ páginas) con OCR y VLM pueden tardar **30 minutos o más** en procesarse. En lugar de mantener el navegador abierto esperando:
+
+1. **Subes el documento**
+2. **Introduces tu email**
+3. **Cierras el navegador** (el proceso continúa en segundo plano)
+4. **Recibes un email** cuando termina con el enlace de descarga
+
+### Configuración del email
+
+#### 1. Crear archivo `.env`
+
+```bash
+# En la raíz del proyecto (C:/e2kb-engine/.env)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=tu-email@gmail.com
+SMTP_PASS=xxxx-xxxx-xxxx-xxxx
+BASE_URL=http://localhost:3000
+```
+
+#### 2. Obtener contraseña de aplicación de Gmail
+
+> ⚠️ **No uses tu contraseña normal de Gmail.** Necesitas una "Contraseña de aplicación".
+
+1. Ve a [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+2. Inicia sesión con tu cuenta de Google
+3. Selecciona "Correo" y "Ordenador Windows"
+4. Haz clic en "Generar"
+5. Copia la contraseña de 16 caracteres (sin espacios)
+6. Pégala en `SMTP_PASS` del archivo `.env`
+
+#### 3. Reiniciar servicios
+
+```bash
+docker-compose up -d
+```
+
+### Flujo de usuario
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Subir PDF      │────▶│  Modal: Email   │────▶│  Conversión     │
+│  (Web UI)       │     │  (opcional)     │     │  en background  │
+└─────────────────┘     └─────────────────┘     └────────┬────────┘
+                                                         │
+                        ┌────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────┐     ┌─────────────────┐
+│  Email con      │◀────│  Conversión     │
+│  link descarga  │     │  completada     │
+└─────────────────┘     └─────────────────┘
+```
+
+### Ejemplo de email recibido
+
+```
+De: E2KB Engine <tu-email@gmail.com>
+Asunto: ✅ Conversión completada: documento.pdf
+
+¡Tu documento ha sido convertido exitosamente!
+
+📄 Archivo: documento.pdf
+⏱️ Tiempo: 15 minutos 32 segundos
+📝 Palabras: 45,230
+
+🔗 Descargar resultado:
+http://localhost:3000/api/convert-docling/download/abc123
+
+Este enlace expira en 24 horas.
 ```
 
 ---
@@ -309,50 +569,178 @@ npm run dev
 
 ---
 
-## 📁 Estructura del Proyecto
+## � API Reference
+
+### Endpoints principales
+
+#### Health Check
+```http
+GET /api/docling/health
+```
+
+Respuesta:
+```json
+{
+  "status": "healthy",
+  "service": "docling",
+  "vlm": {
+    "ollama_url": "http://ollama:11434",
+    "ollama_available": true,
+    "model": "llava:13b",
+    "model_available": true
+  }
+}
+```
+
+#### Convertir documento
+```http
+POST /api/convert-docling
+Content-Type: multipart/form-data
+
+file: <archivo>
+email: usuario@ejemplo.com (opcional)
+```
+
+Respuesta (conversión asíncrona):
+```json
+{
+  "success": true,
+  "jobId": "abc123-def456",
+  "status": "processing",
+  "message": "Conversión iniciada",
+  "emailNotification": true
+}
+```
+
+#### Estado de conversión
+```http
+GET /api/convert-docling/status?jobId=abc123-def456
+```
+
+Respuesta:
+```json
+{
+  "jobId": "abc123-def456",
+  "status": "completed",
+  "progress": 100,
+  "result": {
+    "markdown": "# Contenido...",
+    "wordCount": 45230
+  }
+}
+```
+
+#### Estado del VLM
+```http
+GET http://localhost:8000/vlm/status
+```
+
+Respuesta:
+```json
+{
+  "status": "available",
+  "ollama_url": "http://ollama:11434",
+  "configured_model": "llava:13b",
+  "model_available": true,
+  "available_models": ["llava:13b"],
+  "message": "Ready for VLM enrichment"
+}
+```
+
+#### Formatos soportados
+```http
+GET http://localhost:8000/formats
+```
+
+Respuesta:
+```json
+{
+  "formats": [".pdf", ".docx", ".pptx", ".xlsx", ".html", ".png", ".jpg", ".md"],
+  "description": {
+    ".pdf": "PDF documents (native + OCR for scanned)",
+    ".docx": "Microsoft Word documents",
+    ".pptx": "Microsoft PowerPoint presentations",
+    ".xlsx": "Microsoft Excel spreadsheets"
+  }
+}
+```
+
+---
+
+## � Estructura del Proyecto
 
 ```
 e2kb-engine/
 ├── src/
 │   ├── app/
 │   │   ├── api/
-│   │   │   └── convert/
-│   │   │       └── route.ts    # API de conversión
-│   │   ├── page.tsx            # Interfaz principal
-│   │   └── layout.tsx          # Layout de la app
+│   │   │   ├── convert/
+│   │   │   │   └── route.ts          # API conversión EPUB
+│   │   │   └── convert-docling/
+│   │   │       ├── route.ts          # API conversión multi-formato
+│   │   │       └── status/
+│   │   │           └── route.ts      # Estado de conversiones
+│   │   ├── page.tsx                  # Interfaz principal
+│   │   └── layout.tsx                # Layout de la app
 │   └── lib/
-│       └── epub-engine.ts      # Motor de conversión
-├── Dockerfile                  # Configuración Docker
-├── docker-compose.yml          # Orquestación Docker
-├── netlify.toml               # Configuración Netlify
-└── next.config.ts             # Configuración Next.js
+│       ├── epub-engine.ts            # Motor EPUB nativo
+│       ├── email.ts                  # Servicio de notificaciones
+│       └── queue.ts                  # Cola de trabajos (Redis)
+├── docling-service/
+│   ├── main.py                       # API FastAPI + Docling + VLM
+│   ├── Dockerfile                    # Imagen Docling
+│   └── requirements.txt              # Dependencias Python
+├── docker-compose.yml                # Orquestación (4 servicios)
+├── Dockerfile                        # Imagen Next.js
+├── .env.example                      # Variables de entorno
+└── README.md                         # Esta documentación
 ```
 
 ---
 
 ## 🔧 Tecnologías
 
-- **Framework:** Next.js 15 (App Router)
+### Frontend
+- **Framework:** Next.js 16 (App Router)
 - **Lenguaje:** TypeScript 5
 - **Estilos:** Tailwind CSS
 - **Iconos:** Lucide React
-- **EPUB Parser:** adm-zip
-- **Empaquetado:** Archiver
+
+### Backend
+- **API:** Next.js API Routes + FastAPI (Python)
+- **Conversión EPUB:** adm-zip (Node.js nativo)
+- **Conversión PDF/DOCX:** Docling (Python)
+- **OCR:** RapidOCR (incluido en Docling)
+- **Cola de trabajos:** Redis
+- **Email:** Nodemailer (SMTP)
+
+### IA / Machine Learning
+- **Servidor de modelos:** Ollama
+- **Modelo de visión:** LLaVA 13B (o compatible)
+- **Uso:** Transcripción de fórmulas, descripción de imágenes
+
+### Infraestructura
+- **Contenedores:** Docker + Docker Compose
+- **Orquestación:** 4 servicios (web, docling, ollama, redis)
 
 ---
 
 ## 📊 Comparativa con Alternativas
 
-| Característica | E2KB Engine | Calibre | Pandoc | Servicios SaaS |
-|----------------|-------------|---------|--------|----------------|
-| **Código abierto** | ✅ | ✅ | ✅ | ❌ |
-| **Sin límites de uso** | ✅ | ✅ | ✅ | ❌ |
-| **Interfaz web** | ✅ | ❌ | ❌ | ✅ |
-| **API REST** | ✅ | ❌ | ❌ | ✅ |
-| **Optimizado para RAG** | ✅ | ❌ | ❌ | ❌ |
-| **TOC jerárquico** | ✅ | ❌ | ❌ | ❌ |
-| **Metadatos preservados** | ✅ | Parcial | Parcial | Parcial |
-| **Despliegue propio** | ✅ | ✅ | ✅ | ❌ |
+| Característica | E2KB Engine | Calibre | Pandoc | Mathpix | Servicios SaaS |
+|----------------|-------------|---------|--------|---------|----------------|
+| **Código abierto** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Sin límites de uso** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Interfaz web** | ✅ | ❌ | ❌ | ✅ | ✅ |
+| **API REST** | ✅ | ❌ | ❌ | ✅ | ✅ |
+| **Optimizado para RAG** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **OCR integrado** | ✅ | ❌ | ❌ | ✅ | Parcial |
+| **Fórmulas → LaTeX** | ✅ (VLM) | ❌ | ❌ | ✅ | ❌ |
+| **IA de Visión local** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Notificación email** | ✅ | ❌ | ❌ | ❌ | ✅ |
+| **Multi-formato** | ✅ | ✅ | ✅ | ❌ | Parcial |
+| **Despliegue propio** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **GPU local** | ✅ | N/A | N/A | N/A | N/A |
 
 ---
 
