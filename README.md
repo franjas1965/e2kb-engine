@@ -3,573 +3,408 @@
 <div align="center">
 
 ![E2KB Engine](https://img.shields.io/badge/E2KB-Engine-emerald?style=for-the-badge&logo=markdown&logoColor=white)
-![Next.js](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js)
+![Next.js](https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=next.js)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=for-the-badge&logo=typescript&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue?style=for-the-badge&logo=docker&logoColor=white)
 ![Ollama](https://img.shields.io/badge/Ollama-VLM-purple?style=for-the-badge&logo=ollama&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
-**Convierte EPUB, PDF, DOCX, PPTX y más en documentos Markdown perfectamente estructurados para sistemas RAG e Inteligencia Artificial**
+### La solución open source definitiva para preparar documentos para IA
 
-**🆕 Con IA de Visión (VLM) para transcribir fórmulas matemáticas, tablas e imágenes**
+**Convierte EPUB, PDF, DOCX, PPTX, imágenes y más en Markdown perfectamente estructurado para sistemas RAG e Inteligencia Artificial**
 
-[Demo en vivo](https://e2kb-engine.netlify.app) · [Reportar Bug](https://github.com/franjas1965/e2kb-engine/issues) · [Solicitar Feature](https://github.com/franjas1965/e2kb-engine/issues)
+**🧠 Con IA de Visión (VLM) local para transcribir fórmulas matemáticas a LaTeX**
+
+[Demo EPUB](https://e2kb-engine.netlify.app) · [Documentación](#-tabla-de-contenidos) · [Reportar Bug](https://github.com/franjas1965/e2kb-engine/issues)
 
 </div>
 
 ---
 
+## 🌟 ¿Qué es E2KB Engine?
+
+**E2KB Engine** es una plataforma **100% open source** que transforma cualquier documento en Markdown estructurado, optimizado para alimentar sistemas de Inteligencia Artificial.
+
+### El problema que resolvemos
+
+Las empresas y particulares que trabajan con **IA generativa** y sistemas **RAG** (Retrieval-Augmented Generation) enfrentan un problema crítico:
+
+> *"Tengo miles de documentos PDF, pero mi IA no puede extraer información precisa de ellos."*
+
+**¿Por qué?** Los PDFs son contenedores visuales, no semánticos. El texto se extrae desordenado, las tablas se rompen, las fórmulas desaparecen y los encabezados contaminan el contenido.
+
+### La solución completa
+
+E2KB Engine ofrece **tres niveles de funcionalidad** según tus necesidades:
+
+| Nivel | Funcionalidad | Requisitos | Ideal para |
+|-------|---------------|------------|------------|
+| **🟢 Básico** | Conversión EPUB → Markdown | Node.js o Netlify/Vercel | Libros digitales, documentación estructurada |
+| **🟡 Avanzado** | Multi-formato (PDF, DOCX, PPTX, imágenes) con OCR | Docker | Documentos empresariales, escaneados |
+| **🔴 Completo** | Todo lo anterior + IA de Visión para fórmulas/diagramas | Docker + GPU NVIDIA | Documentos técnicos, científicos, ingeniería |
+
+---
+
 ## 📋 Tabla de Contenidos
 
-- [El Problema que Resolvemos](#-el-problema-que-resolvemos)
-- [La Solución: E2KB Engine](#-la-solución-e2kb-engine)
-- [Arquitectura del Sistema](#-arquitectura-del-sistema)
-- [Instalación con Docker](#-instalación-con-docker)
-- [Enriquecimiento con IA de Visión (VLM)](#-enriquecimiento-con-ia-de-visión-vlm)
-- [Sistema de Notificaciones por Email](#-sistema-de-notificaciones-por-email)
-- [Opciones de Despliegue](#-opciones-de-despliegue)
-- [CLI (Línea de Comandos)](#-cli-línea-de-comandos)
-- [API Reference](#-api-reference)
-- [Desarrollo Local](#-desarrollo-local)
-- [Contribuir](#-contribuir)
+1. [Características completas](#-características-completas)
+2. [Modos de despliegue](#-modos-de-despliegue)
+3. [Instalación rápida](#-instalación-rápida)
+4. [Formatos soportados](#-formatos-soportados)
+5. [IA de Visión (VLM) para fórmulas](#-ia-de-visión-vlm-para-fórmulas)
+6. [Sistema de notificaciones por email](#-sistema-de-notificaciones-por-email)
+7. [CLI para automatización](#-cli-para-automatización)
+8. [API Reference](#-api-reference)
+9. [Arquitectura técnica](#-arquitectura-técnica)
+10. [Comparativa con alternativas](#-comparativa-con-alternativas)
+11. [Contribuir](#-contribuir)
 
 ---
 
-## 🎯 El Problema que Resolvemos
+## ✨ Características Completas
 
-### La crisis silenciosa del RAG: documentos mal estructurados
+### Conversión de documentos
 
-Si trabajas con **Inteligencia Artificial** y sistemas **RAG (Retrieval-Augmented Generation)**, conoces este dolor:
+| Característica | Descripción |
+|----------------|-------------|
+| **Multi-formato** | EPUB, PDF, DOCX, PPTX, XLSX, HTML, imágenes |
+| **OCR integrado** | Extrae texto de PDFs escaneados e imágenes |
+| **Estructura preservada** | Capítulos, secciones, tablas, listas |
+| **Metadatos** | Título, autor, fecha, identificadores |
+| **Tabla de contenidos** | TOC jerárquico con enlaces funcionales |
 
-> *"Mi IA tiene acceso a toda la documentación, pero las respuestas son imprecisas, incompletas o simplemente incorrectas."*
+### Inteligencia Artificial
 
-**El problema no es tu modelo de IA. Es la calidad de tus documentos.**
+| Característica | Descripción |
+|----------------|-------------|
+| **VLM local** | Modelos de visión ejecutándose en tu GPU |
+| **Fórmulas → LaTeX** | Transcripción automática de ecuaciones |
+| **Descripción de imágenes** | Diagramas y planos explicados en texto |
+| **100% privado** | Ningún dato sale de tu servidor |
 
-La mayoría de organizaciones alimentan sus sistemas RAG con PDFs. Y aquí está el secreto que pocos conocen:
+### Experiencia de usuario
 
-### ❌ Por qué los PDFs son el enemigo silencioso del RAG
-
-| Problema | Impacto en RAG |
-|----------|----------------|
-| **Layouts escaneados** | El texto se extrae desordenado, mezclando columnas y párrafos |
-| **Tablas rotas** | Los datos tabulares se convierten en texto sin sentido |
-| **Fórmulas perdidas** | Expresiones matemáticas se transforman en caracteres aleatorios |
-| **Encabezados/pies** | Se mezclan con el contenido principal, contaminando el contexto |
-| **Imágenes con texto** | OCR imperfecto genera ruido en los embeddings |
-
-**Resultado:** Tu sistema RAG recupera fragmentos incorrectos, genera alucinaciones y pierde la confianza de los usuarios.
-
-### ✅ Por qué EPUB es el formato ideal para RAG
-
-| Ventaja | Beneficio para RAG |
-|---------|-------------------|
-| **Estructura semántica** | Capítulos, secciones y párrafos claramente definidos |
-| **Metadatos ricos** | Título, autor, fecha, identificadores preservados |
-| **Tabla de contenidos** | Navegación jerárquica que mejora la recuperación |
-| **Texto limpio** | Sin artefactos de escaneo ni layouts complejos |
-| **Estándar abierto** | Formato consistente y predecible |
-
-**EPUB no es solo un formato de ebook. Es un contenedor XML estructurado, diseñado para preservar la semántica del documento.**
+| Característica | Descripción |
+|----------------|-------------|
+| **Interfaz web moderna** | Drag & drop, vista previa en tiempo real |
+| **Procesamiento asíncrono** | Documentos grandes sin bloquear el navegador |
+| **Notificaciones email** | Recibe el resultado cuando termine |
+| **API REST** | Integración con cualquier sistema |
+| **CLI** | Automatización y procesamiento masivo |
 
 ---
 
-## 💡 La Solución: E2KB Engine
+## 🚀 Modos de Despliegue
 
-**E2KB Engine** (EPUB-to-Knowledge-Base) transforma archivos EPUB en Markdown perfectamente estructurado, listo para:
+E2KB Engine se adapta a diferentes escenarios de uso:
 
-- 🤖 **Sistemas RAG** (LangChain, LlamaIndex, Haystack)
-- 📚 **Bases de conocimiento** (Notion, Obsidian, Confluence)
-- 🔍 **Búsqueda semántica** (Elasticsearch, Pinecone, Weaviate)
-- 💬 **Chatbots documentales** (ChatGPT, Claude, Gemini)
+### Comparativa de modos
 
-### Características principales
+| Modo | Formatos | OCR | VLM/Fórmulas | Requisitos | Coste |
+|------|----------|-----|--------------|------------|-------|
+| **Netlify/Vercel** | Solo EPUB | ❌ | ❌ | Cuenta gratuita | $0 |
+| **Docker Básico** | EPUB + PDF + DOCX... | ✅ | ❌ | 4GB RAM, 2 CPU | $0 |
+| **Docker + GPU** | Todos + fórmulas | ✅ | ✅ | 16GB RAM, GPU 8GB+ | $0 |
+| **CLI local** | Solo EPUB | ❌ | ❌ | Node.js 18+ | $0 |
 
-- ✅ **Metadatos preservados** - Título, autor, fecha, identificador
-- ✅ **TOC jerárquico** - Tabla de contenidos con enlaces funcionales
-- ✅ **Párrafos separados** - Estructura óptima para chunking
-- ✅ **Tablas GFM** - Conversión a GitHub Flavored Markdown
-- ✅ **Imágenes extraídas** - Assets organizados en carpetas
-- ✅ **Sin límites de uso** - Open source, despliega en tu servidor
+### 🟢 Modo 1: Demo en línea (solo EPUB)
 
----
+**Ideal para:** Probar la herramienta, convertir EPUBs pequeños (<5MB)
 
-## 🚀 Opciones de Despliegue
+```
+https://e2kb-engine.netlify.app
+https://e2kb-engine.vercel.app
+```
 
-E2KB Engine ofrece **dos modalidades** según tus necesidades:
+**Limitaciones:**
+- Solo archivos EPUB
+- Máximo 5MB por archivo
+- Sin OCR ni VLM
 
-### Opción 1: Aplicación Web (Interfaz gráfica)
+### 🟡 Modo 2: Docker sin GPU (multi-formato + OCR)
 
-Ideal para usuarios no técnicos o uso ocasional.
+**Ideal para:** Empresas que necesitan convertir PDF, DOCX, PPTX con OCR
 
-#### Demo en línea (limitada)
-
-- **Netlify:** https://e2kb-engine.netlify.app
-- **Vercel:** https://e2kb-engine.vercel.app
-
-> ⚠️ **Limitación importante:** Las plataformas serverless (Vercel, Netlify) tienen un límite de **~5MB** para archivos subidos. Para documentos más grandes, usa el despliegue en servidor propio.
-
-#### Despliegue en servidor propio (Docker/Dokploy)
-
-**Sin límites de tamaño de archivo.** Recomendado para uso profesional.
-
-**Requisitos del servidor:**
-
-| Recurso | Mínimo | Recomendado |
-|---------|--------|-------------|
-| RAM | 1 GB | 2 GB |
-| CPU | 1 vCPU | 2 vCPU |
-| Disco | 5 GB | 10 GB |
-| Node.js | 18+ | 20+ |
-
-**Pasos de despliegue:**
+**Requisitos:**
+- Docker Desktop
+- 4GB RAM mínimo
+- 10GB disco
 
 ```bash
-# 1. Clonar repositorio
 git clone https://github.com/franjas1965/e2kb-engine.git
 cd e2kb-engine
 
-# 2. Construir y ejecutar con Docker
+# Editar docker-compose.yml y comentar el servicio "ollama"
+docker-compose up -d
+```
+
+**Incluye:**
+- ✅ Conversión EPUB (motor nativo)
+- ✅ Conversión PDF, DOCX, PPTX, XLSX, HTML, imágenes
+- ✅ OCR para documentos escaneados
+- ✅ Notificaciones por email
+- ❌ Sin transcripción de fórmulas (requiere GPU)
+
+### 🔴 Modo 3: Docker con GPU (funcionalidad completa)
+
+**Ideal para:** Documentos técnicos con fórmulas, diagramas, planos
+
+**Requisitos:**
+- Docker Desktop con soporte GPU
+- GPU NVIDIA con 8GB+ VRAM (RTX 3060, 3070, 3080, 4070...)
+- 16GB RAM
+- 50GB disco (modelos de IA)
+- NVIDIA Container Toolkit instalado
+
+```bash
+git clone https://github.com/franjas1965/e2kb-engine.git
+cd e2kb-engine
 docker-compose up -d
 
-# La aplicación estará disponible en http://localhost:3000
+# Descargar modelo de visión (primera vez, ~8GB)
+docker exec e2kb-engine-ollama-1 ollama pull llava:13b
 ```
 
-**Con Dokploy:**
+**Incluye todo lo anterior más:**
+- ✅ Transcripción de fórmulas matemáticas a LaTeX
+- ✅ Descripción de diagramas y planos
+- ✅ Interpretación de tablas complejas
+- ✅ Todo procesado localmente (privacidad total)
 
-1. Crear nuevo proyecto en Dokploy
-2. Conectar repositorio: `https://github.com/franjas1965/e2kb-engine`
-3. Configurar:
-   - **Build Method:** Dockerfile
-   - **Port:** 3000
-   - **Memory:** 2GB
-4. Desplegar
+### 🔵 Modo 4: CLI (automatización)
 
----
-
-### Opción 2: CLI (Línea de comandos)
-
-Ideal para automatización, pipelines CI/CD o procesamiento masivo.
+**Ideal para:** Procesamiento masivo, pipelines CI/CD, scripts
 
 ```bash
-# 1. Clonar e instalar
 git clone https://github.com/franjas1965/e2kb-engine.git
 cd e2kb-engine
-npm install
-npm run build:cli
-npm link
+npm install && npm run build:cli && npm link
 
-# 2. Uso desde cualquier carpeta
-e2kb convert documento.epub
-
-# Documento único
+# Uso
 e2kb convert documento.epub --format single
-
-# Por capítulos
-e2kb convert documento.epub --format multi
-
-# Optimizado para NotebookLM (fusión inteligente)
-e2kb convert documento.epub --format optimized --max-words 50000 --max-files 50
+e2kb convert documento.epub --format optimized --max-files 50
 ```
 
-**Formatos de salida:**
-
-| Formato | Descripción |
-|---------|-------------|
-| `single` | Un único archivo Markdown con todo el contenido |
-| `multi` | Un archivo por capítulo |
-| `optimized` | Fusión inteligente de capítulos respetando límites |
-
-**Opciones disponibles:**
-
-| Opción | Descripción | Default |
-|--------|-------------|---------|
-| `--output, -o` | Directorio de salida | `./output` |
-| `--format, -f` | `single`, `multi` o `optimized` | `single` |
-| `--max-words` | Palabras máximas por archivo (solo `optimized`) | `400000` |
-| `--max-files` | Número máximo de archivos (solo `optimized`) | `50` |
-
-**Ejemplo real con CTE (74 capítulos):**
-
-```
-📊 Optimized output: 16 files from 74 chapters
-```
-
-Con `--max-words 50000`, el CTE de 74 capítulos se reduce a **16 archivos**, ideal para NotebookLM (límite 50 fuentes).
-
-**Nombres de archivo descriptivos:**
-
-```
-01_CTEC_Cap01-10_Datos_editoriales.md
-02_CTEC_Cap11-17_Orden_TMA8512021_de_23_de_julio.md
-...
-```
-
-> **Nota:** Las imágenes se eliminan automáticamente para optimizar el resultado para sistemas RAG.
+**Nota:** El CLI solo soporta EPUB. Para otros formatos, usa la API Docker
 
 ---
 
-## ⚠️ Limitaciones en Plataformas Serverless
+## � Instalación Rápida
 
-### El problema de los archivos grandes
-
-Las plataformas serverless como **Vercel** y **Netlify** imponen límites estrictos:
-
-| Plataforma | Límite de payload | Timeout | Memoria |
-|------------|-------------------|---------|---------|
-| **Vercel (Free)** | 4.5 MB | 10s | 1 GB |
-| **Vercel (Pro)** | 50 MB | 60s | 3 GB |
-| **Netlify (Free)** | 6 MB | 10s | 1 GB |
-| **Netlify (Pro)** | 20 MB | 26s | 3 GB |
-
-**Síntomas cuando se excede el límite:**
-
-```
-Error: "Request Entity Too Large"
-Error: "Unexpected token 'R', "Request En"... is not valid JSON"
-```
-
-### Soluciones
-
-| Escenario | Solución recomendada |
-|-----------|---------------------|
-| EPUB < 5MB | Usar demo en línea (Netlify/Vercel) |
-| EPUB > 5MB | Docker local o CLI |
-| PDF, DOCX, PPTX | Docker local (requiere Docling) |
-| Procesamiento masivo | CLI con scripts |
-
----
-
-## 🐳 Docker: Soporte Multi-Formato (Recomendado)
-
-La versión Docker incluye **Docling** para convertir múltiples formatos:
-
-| Formato | Extensiones | Características |
-|---------|-------------|-----------------|
-| **EPUB** | `.epub` | Motor nativo Node.js |
-| **PDF** | `.pdf` | OCR incluido para escaneados |
-| **Word** | `.docx` | Preserva estructura |
-| **PowerPoint** | `.pptx` | Extrae texto de slides |
-| **Excel** | `.xlsx` | Convierte tablas |
-| **Imágenes** | `.png`, `.jpg` | OCR automático |
-| **HTML** | `.html`, `.htm` | Limpieza de tags |
-
-### Instalación con Docker Desktop
+### Opción recomendada: Docker completo
 
 ```bash
 # 1. Clonar repositorio
 git clone https://github.com/franjas1965/e2kb-engine.git
 cd e2kb-engine
 
-# 2. Iniciar servicios (Windows)
+# 2. Iniciar todos los servicios
+docker-compose up -d
+
+# 3. (Solo si tienes GPU) Descargar modelo de visión
+docker exec e2kb-engine-ollama-1 ollama pull llava:13b
+
+# 4. Abrir en el navegador
+# http://localhost:3000
+```
+
+### Scripts de inicio rápido
+
+```bash
+# Windows
 start.bat
 
-# 2. Iniciar servicios (Linux/Mac)
-chmod +x start.sh
-./start.sh
-
-# O manualmente:
-docker-compose up -d --build
+# Linux/Mac
+chmod +x start.sh && ./start.sh
 ```
 
 ### Acceso
 
-- **Web UI:** http://localhost:3000
-- **Desde otros PCs de la red:** http://[TU-IP]:3000
-- **API Docling:** http://localhost:8000
-
-### Arquitectura Docker Completa
-
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                           Docker Compose - E2KB Engine                        │
-│                                                                               │
-│  ┌─────────────────┐    ┌─────────────────────────┐    ┌─────────────────┐   │
-│  │   e2kb-web      │    │   docling               │    │   ollama        │   │
-│  │   (Next.js)     │◄──▶│   (FastAPI + Docling)   │◄──▶│   (VLM GPU)     │   │
-│  │   :3000         │    │   :8000                 │    │   :11434        │   │
-│  └────────┬────────┘    └─────────────────────────┘    └─────────────────┘   │
-│           │                         │                           │             │
-│           │                         │   Extrae imágenes         │             │
-│           │                         │   de fórmulas/tablas      │             │
-│           │                         │         │                 │             │
-│           │                         │         └────────────────▶│             │
-│           │                         │           Describe con    │             │
-│           │                         │           IA de Visión    │             │
-│           │                                                                   │
-│  ┌────────▼────────┐                                                         │
-│  │   redis         │    Cola de trabajos + Estado de conversiones            │
-│  │   :6379         │                                                         │
-│  └─────────────────┘                                                         │
-│                                                                               │
-│  Flujo: EPUB → Motor Node.js                                                 │
-│         PDF/DOCX → Docling → OCR → VLM (fórmulas) → Markdown enriquecido    │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Servicios
-
-| Servicio | Puerto | Descripción |
-|----------|--------|-------------|
-| **e2kb-web** | 3000 | Frontend Next.js + API de conversión |
-| **docling** | 8000 | Motor de conversión Docling (PDF, DOCX, etc.) |
-| **ollama** | 11434 | Servidor de modelos de IA (VLM para imágenes) |
-| **redis** | 6379 | Cola de trabajos y almacenamiento de estado |
-
-### Detener servicios
-
-```bash
-docker-compose down
-```
+| URL | Descripción |
+|-----|-------------|
+| http://localhost:3000 | Interfaz web principal |
+| http://localhost:8000 | API Docling (conversión) |
+| http://localhost:8000/vlm/status | Estado del VLM |
+| http://[TU-IP]:3000 | Acceso desde otros PCs de la red |
 
 ---
 
-## 🤖 Enriquecimiento con IA de Visión (VLM)
+## � Formatos Soportados
 
-### ¿Por qué necesitamos VLM?
+| Formato | Extensiones | Motor | OCR | VLM |
+|---------|-------------|-------|-----|-----|
+| **EPUB** | `.epub` | Node.js nativo | N/A | N/A |
+| **PDF** | `.pdf` | Docling | ✅ | ✅ |
+| **Word** | `.docx` | Docling | N/A | ✅ |
+| **PowerPoint** | `.pptx` | Docling | N/A | ✅ |
+| **Excel** | `.xlsx` | Docling | N/A | N/A |
+| **HTML** | `.html`, `.htm` | Docling | N/A | N/A |
+| **Imágenes** | `.png`, `.jpg`, `.jpeg` | Docling | ✅ | ✅ |
+| **Markdown** | `.md` | Docling | N/A | N/A |
+
+**Leyenda:**
+- **OCR**: Reconocimiento óptico de caracteres para documentos escaneados
+- **VLM**: Procesamiento con IA de Visión para fórmulas y diagramas
+
+---
+
+## 🧠 IA de Visión (VLM) para Fórmulas
+
+### El problema de las fórmulas en PDFs
 
 Cuando convertimos documentos técnicos (normativas, manuales de ingeniería, papers científicos), encontramos un problema crítico:
 
-> **Las fórmulas matemáticas, tablas complejas y diagramas aparecen como imágenes en el PDF, no como texto.**
+> **Las fórmulas matemáticas aparecen como imágenes en el PDF, no como texto.**
 
-El OCR tradicional no puede interpretar estas imágenes. El resultado es un Markdown con "huecos" donde deberían estar las fórmulas:
+El OCR tradicional no puede interpretar estas imágenes. El resultado es un Markdown con "huecos":
 
 ```markdown
-## 2.2 Molestias intensas (MI)
+## 2.2 Cálculo del riesgo
 
 Para calcular el RA, deberán utilizarse las siguientes relaciones:
 
 para el ruido vial:
-
-para el ruido ferroviario:    ← ¡Falta la fórmula!
-
-para el ruido de aeronaves:
+                        ← ¡Aquí debería estar la fórmula!
+para el ruido ferroviario:
 ```
 
 ### La solución: Vision Language Models (VLM)
 
-E2KB Engine integra **Ollama** con modelos de visión (llava:13b) que pueden:
+E2KB Engine integra **Ollama** con modelos de visión que se ejecutan **localmente en tu GPU**:
 
-1. **Detectar** imágenes de fórmulas, tablas y diagramas
-2. **Analizar** el contenido visual
-3. **Transcribir** fórmulas a LaTeX
-4. **Describir** tablas en formato Markdown
-5. **Explicar** diagramas y planos en lenguaje natural
+| Capacidad | Descripción |
+|-----------|-------------|
+| **Fórmulas → LaTeX** | Transcribe ecuaciones matemáticas a formato LaTeX |
+| **Tablas → Markdown** | Convierte tablas complejas a formato GFM |
+| **Diagramas → Texto** | Describe planos, esquemas y gráficos |
+| **100% local** | Ningún dato sale de tu servidor |
 
-### Resultado con VLM
+### Resultado con VLM activado
 
 ```markdown
-## 2.2 Molestias intensas (MI)
+## 2.2 Cálculo del riesgo
 
 Para calcular el RA, deberán utilizarse las siguientes relaciones:
 
 para el ruido vial:
 
-$$R_{A_{vial}} = (79.927\% - 3.1162 \cdot L_{den} + 0.0342 \cdot L_{den}^2) / 100$$
+$$R_{A} = \frac{79.927 - 3.1162 \cdot L_{den} + 0.0342 \cdot L_{den}^2}{100}$$
 
-> **Fórmula 4**: Calcula el riesgo absoluto para molestias intensas por ruido vial, 
-> donde $L_{den}$ es el nivel de ruido día-tarde-noche en decibelios.
-
-para el ruido ferroviario:
-
-$$R_{A_{ferr}} = (38.159\% - 2.46538 \cdot L_{den} + 0.0285 \cdot L_{den}^2) / 100$$
+> **Fórmula**: Riesgo absoluto para molestias por ruido vial, 
+> donde $L_{den}$ es el nivel día-tarde-noche en dB.
 ```
 
-### Configuración del VLM
-
-#### 1. Requisitos de hardware
+### Requisitos de hardware para VLM
 
 | Recurso | Mínimo | Recomendado |
 |---------|--------|-------------|
 | **GPU NVIDIA** | 6GB VRAM | 12GB VRAM |
-| **RAM** | 16GB | 32GB |
+| **RAM Sistema** | 16GB | 32GB |
 | **Disco** | 20GB | 50GB |
 
-#### 2. Modelos disponibles
+**GPUs compatibles:** RTX 3060 (12GB), RTX 3070, RTX 3080, RTX 4070, RTX 4080, RTX 4090, etc.
 
-| Modelo | VRAM | Velocidad | Calidad |
-|--------|------|-----------|---------|
-| `llava:7b` | 4GB | Rápido | Buena |
-| `llava:13b` | 8GB | Medio | Muy buena |
-| `llava:34b` | 20GB | Lento | Excelente |
+### Modelos VLM disponibles
 
-#### 3. Descargar modelo
+| Modelo | VRAM | Velocidad | Calidad | Comando |
+|--------|------|-----------|---------|---------|
+| `llava:7b` | 4GB | Rápido | Buena | `ollama pull llava:7b` |
+| `llava:13b` | 8GB | Medio | Muy buena | `ollama pull llava:13b` |
+| `llava:34b` | 20GB | Lento | Excelente | `ollama pull llava:34b` |
+
+### Configuración del VLM
 
 ```bash
-# El modelo se descarga automáticamente, pero puedes forzarlo:
+# 1. Verificar que Ollama está corriendo
+docker ps | grep ollama
+
+# 2. Descargar modelo (primera vez)
 docker exec e2kb-engine-ollama-1 ollama pull llava:13b
 
-# Verificar modelos disponibles:
-docker exec e2kb-engine-ollama-1 ollama list
+# 3. Verificar estado
+curl http://localhost:8000/vlm/status
 ```
 
-#### 4. Cambiar modelo (opcional)
-
-Edita `docker-compose.yml` y añade la variable de entorno:
+**Cambiar modelo** (editar `docker-compose.yml`):
 
 ```yaml
 docling:
   environment:
-    - VLM_MODEL=llava:34b  # Cambiar a modelo más potente
+    - VLM_MODEL=llava:7b  # Modelo más ligero
 ```
 
-### Verificar estado del VLM
-
-```bash
-# Desde el navegador o curl:
-curl http://localhost:8000/vlm/status
-
-# Respuesta esperada:
-{
-  "status": "available",
-  "ollama_url": "http://ollama:11434",
-  "configured_model": "llava:13b",
-  "model_available": true,
-  "message": "Ready for VLM enrichment"
-}
-```
-
-### ¿Cómo funciona internamente?
+### Flujo de procesamiento
 
 ```
-PDF con fórmulas
-       │
-       ▼
-┌──────────────────┐
-│  Docling OCR     │  Extrae texto + detecta imágenes
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│  Clasificador    │  ¿Es fórmula, tabla o diagrama?
-└────────┬─────────┘
-         │
-    ┌────┴────┬────────────┐
-    ▼         ▼            ▼
-[Fórmula] [Tabla]    [Diagrama]
-    │         │            │
-    ▼         ▼            ▼
-┌──────────────────────────────┐
-│  Ollama VLM (llava:13b)      │
-│  - Fórmulas → LaTeX          │
-│  - Tablas → Markdown         │
-│  - Diagramas → Descripción   │
-└──────────────────────────────┘
-         │
-         ▼
-┌──────────────────┐
-│  Markdown        │  Texto + fórmulas + descripciones
-│  Enriquecido     │
-└──────────────────┘
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  PDF/DOCX   │────▶│  Docling    │────▶│  Detecta    │────▶│  Ollama     │
+│  Original   │     │  OCR        │     │  Imágenes   │     │  VLM        │
+└─────────────┘     └─────────────┘     └─────────────┘     └──────┬──────┘
+                                                                    │
+                    ┌─────────────┐     ┌─────────────┐             │
+                    │  Markdown   │◀────│  Enriquece  │◀────────────┘
+                    │  Final      │     │  con LaTeX  │
+                    └─────────────┘     └─────────────┘
 ```
 
 ---
 
 ## 📧 Sistema de Notificaciones por Email
 
-### ¿Por qué notificaciones por email?
+Los documentos grandes (100+ páginas) con OCR y VLM pueden tardar **30+ minutos**. El sistema de email permite:
 
-Los documentos grandes (100+ páginas) con OCR y VLM pueden tardar **30 minutos o más** en procesarse. En lugar de mantener el navegador abierto esperando:
+1. **Subir documento** → 2. **Introducir email** → 3. **Cerrar navegador** → 4. **Recibir email con resultado**
 
-1. **Subes el documento**
-2. **Introduces tu email**
-3. **Cierras el navegador** (el proceso continúa en segundo plano)
-4. **Recibes un email** cuando termina con el enlace de descarga
-
-### Configuración del email
-
-#### 1. Crear archivo `.env`
+### Configuración
 
 ```bash
-# En la raíz del proyecto (C:/e2kb-engine/.env)
+# Crear archivo .env en la raíz del proyecto
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=tu-email@gmail.com
-SMTP_PASS=xxxx-xxxx-xxxx-xxxx
+SMTP_PASS=xxxx-xxxx-xxxx-xxxx    # Contraseña de aplicación de Gmail
 BASE_URL=http://localhost:3000
 ```
 
-#### 2. Obtener contraseña de aplicación de Gmail
-
-> ⚠️ **No uses tu contraseña normal de Gmail.** Necesitas una "Contraseña de aplicación".
-
+**Obtener contraseña de aplicación de Gmail:**
 1. Ve a [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
-2. Inicia sesión con tu cuenta de Google
-3. Selecciona "Correo" y "Ordenador Windows"
-4. Haz clic en "Generar"
-5. Copia la contraseña de 16 caracteres (sin espacios)
-6. Pégala en `SMTP_PASS` del archivo `.env`
-
-#### 3. Reiniciar servicios
-
-```bash
-docker-compose up -d
-```
-
-### Flujo de usuario
-
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  Subir PDF      │────▶│  Modal: Email   │────▶│  Conversión     │
-│  (Web UI)       │     │  (opcional)     │     │  en background  │
-└─────────────────┘     └─────────────────┘     └────────┬────────┘
-                                                         │
-                        ┌────────────────────────────────┘
-                        │
-                        ▼
-┌─────────────────┐     ┌─────────────────┐
-│  Email con      │◀────│  Conversión     │
-│  link descarga  │     │  completada     │
-└─────────────────┘     └─────────────────┘
-```
-
-### Ejemplo de email recibido
-
-```
-De: E2KB Engine <tu-email@gmail.com>
-Asunto: ✅ Conversión completada: documento.pdf
-
-¡Tu documento ha sido convertido exitosamente!
-
-📄 Archivo: documento.pdf
-⏱️ Tiempo: 15 minutos 32 segundos
-📝 Palabras: 45,230
-
-🔗 Descargar resultado:
-http://localhost:3000/api/convert-docling/download/abc123
-
-Este enlace expira en 24 horas.
-```
+2. Genera una contraseña para "Correo"
+3. Copia los 16 caracteres (sin espacios) a `SMTP_PASS`
 
 ---
 
-## 🛠️ Desarrollo Local
+## 💻 CLI para Automatización
+
+El CLI permite procesar EPUBs desde la línea de comandos:
 
 ```bash
-# Clonar repositorio
-git clone https://github.com/franjas1965/e2kb-engine.git
-cd e2kb-engine
+# Instalar CLI
+npm install && npm run build:cli && npm link
 
-# Instalar dependencias
-npm install
+# Convertir a un único archivo
+e2kb convert documento.epub --format single
 
-# Ejecutar en modo desarrollo
-npm run dev
+# Convertir a múltiples archivos (uno por capítulo)
+e2kb convert documento.epub --format multi
 
-# Abrir http://localhost:3000
+# Optimizado para NotebookLM (máx 50 archivos)
+e2kb convert documento.epub --format optimized --max-files 50 --max-words 50000
 ```
 
-### Scripts disponibles
+### Opciones del CLI
 
-| Comando | Descripción |
-|---------|-------------|
-| `npm run dev` | Servidor de desarrollo |
-| `npm run build` | Construir para producción |
-| `npm run start` | Ejecutar build de producción |
-| `npm run lint` | Verificar código |
+| Opción | Descripción | Default |
+|--------|-------------|---------|
+| `--output, -o` | Directorio de salida | `./output` |
+| `--format, -f` | `single`, `multi`, `optimized` | `single` |
+| `--max-words` | Palabras máx por archivo | `400000` |
+| `--max-files` | Número máx de archivos | `50` |
+
+**Nota:** El CLI solo soporta EPUB. Para PDF/DOCX usa la API Docker.
 
 ---
 
-## � API Reference
+## 📡 API Reference
 
 ### Endpoints principales
 
@@ -667,61 +502,73 @@ Respuesta:
 
 ---
 
-## � Estructura del Proyecto
+## 🏗️ Arquitectura Técnica
+
+### Diagrama de servicios
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           Docker Compose - E2KB Engine                        │
+│                                                                               │
+│  ┌─────────────────┐    ┌─────────────────────────┐    ┌─────────────────┐   │
+│  │   e2kb-web      │    │   docling               │    │   ollama        │   │
+│  │   (Next.js)     │◄──▶│   (FastAPI + Docling)   │◄──▶│   (VLM GPU)     │   │
+│  │   :3000         │    │   :8000                 │    │   :11434        │   │
+│  └────────┬────────┘    └─────────────────────────┘    └─────────────────┘   │
+│           │                                                                   │
+│  ┌────────▼────────┐                                                         │
+│  │   redis         │    Cola de trabajos + Estado de conversiones            │
+│  │   :6379         │                                                         │
+│  └─────────────────┘                                                         │
+│                                                                               │
+│  Flujo: EPUB → Motor Node.js (nativo)                                        │
+│         PDF/DOCX → Docling → OCR → VLM → Markdown enriquecido               │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Servicios Docker
+
+| Servicio | Puerto | Tecnología | Función |
+|----------|--------|------------|---------|
+| **e2kb-web** | 3000 | Next.js 15 | Frontend + API + Motor EPUB |
+| **docling** | 8000 | FastAPI + Docling | Conversión PDF/DOCX + OCR |
+| **ollama** | 11434 | Ollama | Modelos VLM (GPU) |
+| **redis** | 6379 | Redis | Cola de trabajos |
+
+### Estructura del proyecto
 
 ```
 e2kb-engine/
-├── src/
+├── src/                              # Frontend + API Next.js
 │   ├── app/
 │   │   ├── api/
-│   │   │   ├── convert/
-│   │   │   │   └── route.ts          # API conversión EPUB
-│   │   │   └── convert-docling/
-│   │   │       ├── route.ts          # API conversión multi-formato
-│   │   │       └── status/
-│   │   │           └── route.ts      # Estado de conversiones
-│   │   ├── page.tsx                  # Interfaz principal
-│   │   └── layout.tsx                # Layout de la app
+│   │   │   ├── convert/              # API EPUB (nativo)
+│   │   │   └── convert-docling/      # API multi-formato
+│   │   └── page.tsx                  # Interfaz web
 │   └── lib/
-│       ├── epub-engine.ts            # Motor EPUB nativo
-│       ├── email.ts                  # Servicio de notificaciones
-│       └── queue.ts                  # Cola de trabajos (Redis)
-├── docling-service/
-│   ├── main.py                       # API FastAPI + Docling + VLM
-│   ├── Dockerfile                    # Imagen Docling
-│   └── requirements.txt              # Dependencias Python
-├── docker-compose.yml                # Orquestación (4 servicios)
-├── Dockerfile                        # Imagen Next.js
-├── .env.example                      # Variables de entorno
-└── README.md                         # Esta documentación
+│       ├── epub-engine.ts            # Motor EPUB
+│       ├── email.ts                  # Notificaciones
+│       └── queue.ts                  # Cola Redis
+├── docling-service/                  # Servicio Python
+│   ├── main.py                       # FastAPI + Docling + VLM
+│   └── Dockerfile
+├── docker-compose.yml                # Orquestación
+├── start.bat / start.sh              # Scripts de inicio
+└── .env.example                      # Variables de entorno
 ```
 
----
+### Stack tecnológico
 
-## 🔧 Tecnologías
-
-### Frontend
-- **Framework:** Next.js 16 (App Router)
-- **Lenguaje:** TypeScript 5
-- **Estilos:** Tailwind CSS
-- **Iconos:** Lucide React
-
-### Backend
-- **API:** Next.js API Routes + FastAPI (Python)
-- **Conversión EPUB:** adm-zip (Node.js nativo)
-- **Conversión PDF/DOCX:** Docling (Python)
-- **OCR:** RapidOCR (incluido en Docling)
-- **Cola de trabajos:** Redis
-- **Email:** Nodemailer (SMTP)
-
-### IA / Machine Learning
-- **Servidor de modelos:** Ollama
-- **Modelo de visión:** LLaVA 13B (o compatible)
-- **Uso:** Transcripción de fórmulas, descripción de imágenes
-
-### Infraestructura
-- **Contenedores:** Docker + Docker Compose
-- **Orquestación:** 4 servicios (web, docling, ollama, redis)
+| Capa | Tecnología |
+|------|------------|
+| **Frontend** | Next.js 15, TypeScript, Tailwind CSS, Lucide Icons |
+| **Backend** | Next.js API Routes, FastAPI (Python) |
+| **Conversión** | Motor EPUB nativo (Node.js), Docling (Python) |
+| **OCR** | RapidOCR (integrado en Docling) |
+| **IA** | Ollama, LLaVA (modelos de visión) |
+| **Cola** | Redis |
+| **Email** | Nodemailer (SMTP) |
+| **Contenedores** | Docker, Docker Compose |
 
 ---
 
@@ -765,18 +612,30 @@ Distribuido bajo la licencia MIT. Ver `LICENSE` para más información.
 ## 🙏 Agradecimientos
 
 - [Next.js](https://nextjs.org/) - Framework React
+- [Docling](https://github.com/DS4SD/docling) - Conversión de documentos
+- [Ollama](https://ollama.ai/) - Servidor de modelos de IA
+- [LLaVA](https://llava-vl.github.io/) - Modelo de visión
 - [Tailwind CSS](https://tailwindcss.com/) - Framework CSS
+- [Redis](https://redis.io/) - Base de datos en memoria
 - [Lucide](https://lucide.dev/) - Iconos
-- [adm-zip](https://github.com/cthackers/adm-zip) - Parser ZIP
+
+---
+
+## 📞 Soporte
+
+- **Issues:** [github.com/franjas1965/e2kb-engine/issues](https://github.com/franjas1965/e2kb-engine/issues)
+- **Discusiones:** [github.com/franjas1965/e2kb-engine/discussions](https://github.com/franjas1965/e2kb-engine/discussions)
 
 ---
 
 <div align="center">
 
-**¿Te ha sido útil E2KB Engine?**
+### ¿Te ha sido útil E2KB Engine?
 
-⭐ Dale una estrella en GitHub ⭐
+⭐ **Dale una estrella en GitHub** ⭐
 
-[Reportar un problema](https://github.com/franjas1965/e2kb-engine/issues) · [Solicitar una funcionalidad](https://github.com/franjas1965/e2kb-engine/issues)
+**E2KB Engine** es un proyecto open source mantenido por la comunidad.
+
+[Ver en GitHub](https://github.com/franjas1965/e2kb-engine) · [Reportar Bug](https://github.com/franjas1965/e2kb-engine/issues) · [Solicitar Feature](https://github.com/franjas1965/e2kb-engine/issues)
 
 </div>
