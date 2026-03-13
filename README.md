@@ -23,7 +23,7 @@
 
 ## ⚠️ AVISO LEGAL IMPORTANTE
 
-**Este software es propiedad exclusiva de Francisco Javier Sánchez (franjas1965).**
+**Este software es propiedad exclusiva de Francisco Javier Osorio (franjas1965).**
 
 La utilización, copia, modificación, distribución o cualquier otra explotación de este software **requiere autorización previa y por escrito del propietario**.
 
@@ -627,7 +627,7 @@ e2kb-engine/
 
 **LICENCIA PROPIETARIA - TODOS LOS DERECHOS RESERVADOS**
 
-Copyright (c) 2024-2026 Francisco Javier Sánchez (franjas1965)
+Copyright (c) 2024-2026 Francisco Javier Osorio (franjas1965)
 
 Este software es propiedad exclusiva del autor. **Queda prohibido**:
 
@@ -663,7 +663,7 @@ Ver archivo [LICENSE](LICENSE) para términos completos.
 
 ## 📞 Contacto
 
-**Propietario:** Francisco Javier Sánchez
+**Propietario:** Francisco Javier Osorio
 
 📧 **Email:** franjas1@gmail.com
 
@@ -676,7 +676,7 @@ Para consultas sobre:
 
 <div align="center">
 
-**E2KB Engine** © 2024-2026 Francisco Javier Sánchez
+**E2KB Engine** © 2024-2026 Francisco Javier Osorio
 
 Todos los derechos reservados.
 
