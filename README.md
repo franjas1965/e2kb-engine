@@ -3,27 +3,39 @@
 <div align="center">
 
 ![E2KB Engine](https://img.shields.io/badge/E2KB-Engine-emerald?style=for-the-badge&logo=markdown&logoColor=white)
-![Next.js](https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=next.js)
+![Next.js](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=for-the-badge&logo=typescript&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue?style=for-the-badge&logo=docker&logoColor=white)
-![Ollama](https://img.shields.io/badge/Ollama-VLM-purple?style=for-the-badge&logo=ollama&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
+![Claude](https://img.shields.io/badge/Claude-AI-purple?style=for-the-badge&logo=anthropic&logoColor=white)
+![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)
 
-### La solución open source definitiva para preparar documentos para IA
+### Plataforma profesional para preparar documentos para IA
 
 **Convierte EPUB, PDF, DOCX, PPTX, imágenes y más en Markdown perfectamente estructurado para sistemas RAG e Inteligencia Artificial**
 
-**🧠 Con IA de Visión (VLM) local para transcribir fórmulas matemáticas a LaTeX**
+**🧠 Con IA de Visión (Claude/OpenAI API) para transcribir fórmulas matemáticas a LaTeX**
 
-[Demo EPUB](https://e2kb-engine.netlify.app) · [Documentación](#-tabla-de-contenidos) · [Reportar Bug](https://github.com/franjas1965/e2kb-engine/issues)
+[Demo EPUB](https://e2kb-engine.netlify.app) · [Documentación](#-tabla-de-contenidos) · [Solicitar Licencia](#-licencia)
 
 </div>
 
 ---
 
+## ⚠️ AVISO LEGAL IMPORTANTE
+
+**Este software es propiedad exclusiva de Francisco Javier Sánchez (franjas1965).**
+
+La utilización, copia, modificación, distribución o cualquier otra explotación de este software **requiere autorización previa y por escrito del propietario**.
+
+Para solicitar autorización, contactar a: **franjas1@gmail.com**
+
+Ver archivo [LICENSE](LICENSE) para más detalles.
+
+---
+
 ## 🌟 ¿Qué es E2KB Engine?
 
-**E2KB Engine** es una plataforma **100% open source** que transforma cualquier documento en Markdown estructurado, optimizado para alimentar sistemas de Inteligencia Artificial.
+**E2KB Engine** es una plataforma profesional que transforma cualquier documento en Markdown estructurado, optimizado para alimentar sistemas de Inteligencia Artificial.
 
 ### El problema que resolvemos
 
@@ -41,7 +53,7 @@ E2KB Engine ofrece **tres niveles de funcionalidad** según tus necesidades:
 |-------|---------------|------------|------------|
 | **🟢 Básico** | Conversión EPUB → Markdown | Node.js o Netlify/Vercel | Libros digitales, documentación estructurada |
 | **🟡 Avanzado** | Multi-formato (PDF, DOCX, PPTX, imágenes) con OCR | Docker | Documentos empresariales, escaneados |
-| **🔴 Completo** | Todo lo anterior + IA de Visión para fórmulas/diagramas | Docker + GPU NVIDIA | Documentos técnicos, científicos, ingeniería |
+| **🔴 Premium** | Todo lo anterior + IA de Visión (Claude) para fórmulas | Docker + API Key Claude | Documentos técnicos, científicos, ingeniería |
 
 ---
 
@@ -104,7 +116,7 @@ E2KB Engine se adapta a diferentes escenarios de uso:
 |------|----------|-----|--------------|------------|-------|
 | **Netlify/Vercel** | Solo EPUB | ❌ | ❌ | Cuenta gratuita | $0 |
 | **Docker Básico** | EPUB + PDF + DOCX... | ✅ | ❌ | 4GB RAM, 2 CPU | $0 |
-| **Docker + GPU** | Todos + fórmulas | ✅ | ✅ | 16GB RAM, GPU 8GB+ | $0 |
+| **Docker + Claude** | Todos + fórmulas | ✅ | ✅ | 4GB RAM + API Key | ~$0.03/página |
 | **CLI local** | Solo EPUB | ❌ | ❌ | Node.js 18+ | $0 |
 
 ### 🟢 Modo 1: Demo en línea (solo EPUB)
@@ -145,31 +157,43 @@ docker-compose up -d
 - ✅ Notificaciones por email
 - ❌ Sin transcripción de fórmulas (requiere GPU)
 
-### 🔴 Modo 3: Docker con GPU (funcionalidad completa)
+### 🔴 Modo 3: Docker con Claude/OpenAI API (funcionalidad completa)
 
 **Ideal para:** Documentos técnicos con fórmulas, diagramas, planos
 
 **Requisitos:**
-- Docker Desktop con soporte GPU
-- GPU NVIDIA con 8GB+ VRAM (RTX 3060, 3070, 3080, 4070...)
-- 16GB RAM
-- 50GB disco (modelos de IA)
-- NVIDIA Container Toolkit instalado
+- Docker Desktop
+- 4GB RAM mínimo
+- API Key de Claude (Anthropic) u OpenAI
 
 ```bash
 git clone https://github.com/franjas1965/e2kb-engine.git
 cd e2kb-engine
-docker-compose up -d
 
-# Descargar modelo de visión (primera vez, ~8GB)
-docker exec e2kb-engine-ollama-1 ollama pull llava:13b
+# 1. Copiar archivo de configuración
+cp .env.example .env
+
+# 2. Editar .env con tu API Key (elige UNA opción):
+#    - CLAUDE_API_KEY=sk-ant-api03-...  (recomendado)
+#    - OPENAI_API_KEY=sk-...
+
+# 3. Iniciar servicios
+docker-compose up -d
 ```
+
+**Configuración de API Keys:**
+
+| Proveedor | Variable | Modelo por defecto | Obtener Key |
+|-----------|----------|-------------------|-------------|
+| **Claude** | `CLAUDE_API_KEY` | `claude-sonnet-4-20250514` | [console.anthropic.com](https://console.anthropic.com) |
+| **OpenAI** | `OPENAI_API_KEY` | `gpt-4o` | [platform.openai.com](https://platform.openai.com) |
 
 **Incluye todo lo anterior más:**
 - ✅ Transcripción de fórmulas matemáticas a LaTeX
 - ✅ Descripción de diagramas y planos
 - ✅ Interpretación de tablas complejas
-- ✅ Todo procesado localmente (privacidad total)
+- ✅ Modelo Claude Sonnet (alta calidad)
+- 💰 Coste: ~$0.03 por página
 
 ### 🔵 Modo 4: CLI (automatización)
 
@@ -189,7 +213,7 @@ e2kb convert documento.epub --format optimized --max-files 50
 
 ---
 
-## � Instalación Rápida
+## 🔧 Instalación Rápida
 
 ### Opción recomendada: Docker completo
 
@@ -198,11 +222,12 @@ e2kb convert documento.epub --format optimized --max-files 50
 git clone https://github.com/franjas1965/e2kb-engine.git
 cd e2kb-engine
 
-# 2. Iniciar todos los servicios
-docker-compose up -d
+# 2. Configurar variables de entorno
+cp .env.example .env
+# Editar .env con tus credenciales (ver sección de configuración)
 
-# 3. (Solo si tienes GPU) Descargar modelo de visión
-docker exec e2kb-engine-ollama-1 ollama pull llava:13b
+# 3. Iniciar todos los servicios
+docker-compose up -d
 
 # 4. Abrir en el navegador
 # http://localhost:3000
@@ -216,6 +241,28 @@ start.bat
 
 # Linux/Mac
 chmod +x start.sh && ./start.sh
+```
+
+### Archivo .env.example
+
+El archivo `.env.example` contiene todas las variables configurables:
+
+```bash
+# Email para notificaciones
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=tu-email@gmail.com
+SMTP_PASS=xxxx-xxxx-xxxx-xxxx  # Contraseña de aplicación Gmail
+
+# URL base para enlaces de descarga
+BASE_URL=http://localhost:3000
+
+# API Key para modo Premium (elegir UNA)
+CLAUDE_API_KEY=                 # Recomendado: https://console.anthropic.com
+CLAUDE_MODEL=claude-sonnet-4-20250514
+
+OPENAI_API_KEY=                 # Alternativa: https://platform.openai.com
+OPENAI_MODEL=gpt-4o
 ```
 
 ### Acceso
@@ -244,11 +291,11 @@ chmod +x start.sh && ./start.sh
 
 **Leyenda:**
 - **OCR**: Reconocimiento óptico de caracteres para documentos escaneados
-- **VLM**: Procesamiento con IA de Visión para fórmulas y diagramas
+- **VLM**: Procesamiento con IA de Visión para fórmulas y diagramas (modo Premium)
 
 ---
 
-## 🧠 IA de Visión (VLM) para Fórmulas
+## 🧠 Modo Premium: IA de Visión para Fórmulas
 
 ### El problema de las fórmulas en PDFs
 
@@ -264,22 +311,22 @@ El OCR tradicional no puede interpretar estas imágenes. El resultado es un Mark
 Para calcular el RA, deberán utilizarse las siguientes relaciones:
 
 para el ruido vial:
-                        ← ¡Aquí debería estar la fórmula!
+*[imagen - usar modo Premium]*
 para el ruido ferroviario:
 ```
 
-### La solución: Vision Language Models (VLM)
+### La solución: Claude API (Modo Premium)
 
-E2KB Engine integra **Ollama** con modelos de visión que se ejecutan **localmente en tu GPU**:
+E2KB Engine integra **Claude Sonnet** de Anthropic para procesar imágenes con fórmulas:
 
 | Capacidad | Descripción |
 |-----------|-------------|
-| **Fórmulas → LaTeX** | Transcribe ecuaciones matemáticas a formato LaTeX |
+| **Fórmulas → LaTeX** | Transcribe ecuaciones matemáticas a formato LaTeX válido |
+| **Estructura jerárquica** | Detecta títulos, secciones y subsecciones |
 | **Tablas → Markdown** | Convierte tablas complejas a formato GFM |
-| **Diagramas → Texto** | Describe planos, esquemas y gráficos |
-| **100% local** | Ningún dato sale de tu servidor |
+| **Alta precisión** | Modelo Claude Sonnet 4 de última generación |
 
-### Resultado con VLM activado
+### Resultado con modo Premium
 
 ```markdown
 ## 2.2 Cálculo del riesgo
@@ -288,63 +335,48 @@ Para calcular el RA, deberán utilizarse las siguientes relaciones:
 
 para el ruido vial:
 
-$$R_{A} = \frac{79.927 - 3.1162 \cdot L_{den} + 0.0342 \cdot L_{den}^2}{100}$$
+$$
+RA_{MI,vial} = \frac{(78.9270 - 3.1162 \cdot L_{den} + 0.0342 \cdot L_{den}^2)}{100}
+$$
 
-> **Fórmula**: Riesgo absoluto para molestias por ruido vial, 
-> donde $L_{den}$ es el nivel día-tarde-noche en dB.
+> **(Fórmula 4)**
 ```
 
-### Requisitos de hardware para VLM
+### Configuración del modo Premium
 
-| Recurso | Mínimo | Recomendado |
-|---------|--------|-------------|
-| **GPU NVIDIA** | 6GB VRAM | 12GB VRAM |
-| **RAM Sistema** | 16GB | 32GB |
-| **Disco** | 20GB | 50GB |
+1. **Obtener API Key de Claude:**
+   - Regístrate en [console.anthropic.com](https://console.anthropic.com)
+   - Genera una API Key
 
-**GPUs compatibles:** RTX 3060 (12GB), RTX 3070, RTX 3080, RTX 4070, RTX 4080, RTX 4090, etc.
-
-### Modelos VLM disponibles
-
-| Modelo | VRAM | Velocidad | Calidad | Comando |
-|--------|------|-----------|---------|---------|
-| `llava:7b` | 4GB | Rápido | Buena | `ollama pull llava:7b` |
-| `llava:13b` | 8GB | Medio | Muy buena | `ollama pull llava:13b` |
-| `llava:34b` | 20GB | Lento | Excelente | `ollama pull llava:34b` |
-
-### Configuración del VLM
-
-```bash
-# 1. Verificar que Ollama está corriendo
-docker ps | grep ollama
-
-# 2. Descargar modelo (primera vez)
-docker exec e2kb-engine-ollama-1 ollama pull llava:13b
-
-# 3. Verificar estado
-curl http://localhost:8000/vlm/status
-```
-
-**Cambiar modelo** (editar `docker-compose.yml`):
+2. **Configurar en docker-compose.yml:**
 
 ```yaml
 docling:
   environment:
-    - VLM_MODEL=llava:7b  # Modelo más ligero
+    - CLAUDE_API_KEY=sk-ant-api03-...
+    - CLAUDE_MODEL=claude-sonnet-4-20250514
 ```
 
-### Flujo de procesamiento
+3. **Reiniciar el servicio:**
+
+```bash
+docker-compose up -d docling
+```
+
+### Costes estimados
+
+| Modelo | Coste por página | Calidad | Recomendado |
+|--------|------------------|---------|-------------|
+| `claude-3-haiku` | ~$0.01 | Buena | Documentos simples |
+| `claude-sonnet-4` | ~$0.03 | Excelente | **Documentos técnicos** |
+
+### Flujo de procesamiento Premium
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  PDF/DOCX   │────▶│  Docling    │────▶│  Detecta    │────▶│  Ollama     │
-│  Original   │     │  OCR        │     │  Imágenes   │     │  VLM        │
-└─────────────┘     └─────────────┘     └─────────────┘     └──────┬──────┘
-                                                                    │
-                    ┌─────────────┐     ┌─────────────┐             │
-                    │  Markdown   │◀────│  Enriquece  │◀────────────┘
-                    │  Final      │     │  con LaTeX  │
-                    └─────────────┘     └─────────────┘
+│  PDF        │────▶│  Renderiza  │────▶│  Claude     │────▶│  Markdown   │
+│  Original   │     │  a imagen   │     │  Sonnet API │     │  con LaTeX  │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
 ```
 
 ---
@@ -591,51 +623,61 @@ e2kb-engine/
 
 ---
 
-## 🤝 Contribuir
-
-Las contribuciones son bienvenidas. Por favor:
-
-1. Fork el repositorio
-2. Crea una rama (`git checkout -b feature/nueva-funcionalidad`)
-3. Commit tus cambios (`git commit -m 'Añadir nueva funcionalidad'`)
-4. Push a la rama (`git push origin feature/nueva-funcionalidad`)
-5. Abre un Pull Request
-
----
-
 ## 📄 Licencia
 
-Distribuido bajo la licencia MIT. Ver `LICENSE` para más información.
+**LICENCIA PROPIETARIA - TODOS LOS DERECHOS RESERVADOS**
+
+Copyright (c) 2024-2026 Francisco Javier Sánchez (franjas1965)
+
+Este software es propiedad exclusiva del autor. **Queda prohibido**:
+
+- ❌ Usar este software sin autorización
+- ❌ Copiar, modificar o distribuir el código
+- ❌ Incorporar este software en otros proyectos
+- ❌ Uso comercial sin licencia
+
+**Para solicitar autorización de uso:**
+
+📧 **Email:** franjas1@gmail.com
+
+Incluir en la solicitud:
+- Nombre o razón social
+- Uso previsto (personal/comercial)
+- Duración del uso
+
+Ver archivo [LICENSE](LICENSE) para términos completos.
 
 ---
 
-## 🙏 Agradecimientos
+## 🙏 Tecnologías utilizadas
 
 - [Next.js](https://nextjs.org/) - Framework React
 - [Docling](https://github.com/DS4SD/docling) - Conversión de documentos
-- [Ollama](https://ollama.ai/) - Servidor de modelos de IA
-- [LLaVA](https://llava-vl.github.io/) - Modelo de visión
+- [Claude API](https://anthropic.com/) - IA de visión para fórmulas
+- [OpenAI API](https://openai.com/) - IA alternativa
 - [Tailwind CSS](https://tailwindcss.com/) - Framework CSS
-- [Redis](https://redis.io/) - Base de datos en memoria
-- [Lucide](https://lucide.dev/) - Iconos
+- [Redis](https://redis.io/) - Persistencia de trabajos
+- [Docker](https://docker.com/) - Contenedores
 
 ---
 
-## 📞 Soporte
+## 📞 Contacto
 
-- **Issues:** [github.com/franjas1965/e2kb-engine/issues](https://github.com/franjas1965/e2kb-engine/issues)
-- **Discusiones:** [github.com/franjas1965/e2kb-engine/discussions](https://github.com/franjas1965/e2kb-engine/discussions)
+**Propietario:** Francisco Javier Sánchez
+
+📧 **Email:** franjas1@gmail.com
+
+Para consultas sobre:
+- Solicitud de licencia de uso
+- Licencias comerciales
+- Soporte técnico
 
 ---
 
 <div align="center">
 
-### ¿Te ha sido útil E2KB Engine?
+**E2KB Engine** © 2024-2026 Francisco Javier Sánchez
 
-⭐ **Dale una estrella en GitHub** ⭐
-
-**E2KB Engine** es un proyecto open source mantenido por la comunidad.
-
-[Ver en GitHub](https://github.com/franjas1965/e2kb-engine) · [Reportar Bug](https://github.com/franjas1965/e2kb-engine/issues) · [Solicitar Feature](https://github.com/franjas1965/e2kb-engine/issues)
+Todos los derechos reservados.
 
 </div>

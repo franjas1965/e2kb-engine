@@ -36,6 +36,7 @@ interface ConversionOptions {
   extractImages: boolean;
   maxWords: number;
   maxFiles: number;
+  processingMode: 'basic' | 'premium';
 }
 
 export default function Home() {
@@ -46,12 +47,36 @@ export default function Home() {
     outputFormat: 'multi',
     extractImages: false,
     maxWords: 400000,
-    maxFiles: 50
+    maxFiles: 50,
+    processingMode: 'basic'
   });
+  const [premiumAvailable, setPremiumAvailable] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [email, setEmail] = useState('');
   const [emailSubmitted, setEmailSubmitted] = useState(false);
+
+  // Check premium availability on mount
+  const checkPremiumAvailable = useCallback(async () => {
+    try {
+      const response = await fetch('/api/docling/health');
+      if (response.ok) {
+        const data = await response.json();
+        setPremiumAvailable(data.premium_available === true);
+      }
+    } catch {
+      setPremiumAvailable(false);
+    }
+  }, []);
+
+  // Check on file select if it's a PDF
+  const handleFileWithPremiumCheck = useCallback(async (selectedFile: File) => {
+    setFile(selectedFile);
+    setResult(null);
+    if (selectedFile.name.toLowerCase().endsWith('.pdf')) {
+      await checkPremiumAvailable();
+    }
+  }, [checkPremiumAvailable]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -68,18 +93,16 @@ export default function Home() {
     setIsDragging(false);
     const droppedFile = e.dataTransfer.files[0];
     if (droppedFile && isValidFileType(droppedFile.name)) {
-      setFile(droppedFile);
-      setResult(null);
+      handleFileWithPremiumCheck(droppedFile);
     }
-  }, []);
+  }, [handleFileWithPremiumCheck]);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile && isValidFileType(selectedFile.name)) {
-      setFile(selectedFile);
-      setResult(null);
+      handleFileWithPremiumCheck(selectedFile);
     }
-  }, []);
+  }, [handleFileWithPremiumCheck]);
 
   const handleConvert = async () => {
     if (!file) return;
@@ -138,6 +161,11 @@ export default function Home() {
       formData.append('extractImages', String(options.extractImages));
       formData.append('maxWords', String(options.maxWords));
       formData.append('maxFiles', String(options.maxFiles));
+      
+      // Add processing mode for PDF and EPUB files
+      if (file.name.toLowerCase().endsWith('.pdf') || file.name.toLowerCase().endsWith('.epub')) {
+        formData.append('mode', options.processingMode);
+      }
 
       // Route to appropriate API based on file type
       const apiEndpoint = useDocling ? '/api/convert-docling' : '/api/convert';
@@ -373,6 +401,35 @@ export default function Home() {
                       Fusiona capítulos para generar el menor número de archivos respetando los límites.
                     </p>
                   </>
+                )}
+
+                {/* Processing Mode - show for PDF and EPUB files */}
+                {file && (file.name.toLowerCase().endsWith('.pdf') || file.name.toLowerCase().endsWith('.epub')) && (
+                  <div className="pt-2 border-t border-slate-600/50">
+                    <label className="text-slate-400 text-sm block mb-2">Modo de procesamiento</label>
+                    <select
+                      value={options.processingMode}
+                      onChange={(e) => setOptions({ ...options, processingMode: e.target.value as 'basic' | 'premium' })}
+                      className="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="basic">Básico (gratuito)</option>
+                      <option value="premium">
+                        Premium (Claude AI)
+                      </option>
+                    </select>
+                    {options.processingMode === 'premium' && (
+                      <p className="text-amber-400 text-xs mt-2">
+                        ⚡ Procesa imágenes con Claude AI: extrae fórmulas LaTeX, tablas y diagramas. Coste estimado: ~$0.01/imagen
+                      </p>
+                    )}
+                    {options.processingMode === 'basic' && (
+                      <p className="text-slate-500 text-xs mt-2">
+                        {file.name.toLowerCase().endsWith('.epub') 
+                          ? 'Las imágenes se eliminan del documento.'
+                          : 'Extracción de texto estructurado. Las fórmulas en imágenes no se procesan.'}
+                      </p>
+                    )}
+                  </div>
                 )}
 
                 <p className="text-slate-500 text-xs mt-2">

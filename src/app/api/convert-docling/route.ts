@@ -7,6 +7,7 @@ import * as crypto from 'crypto';
 import axios from 'axios';
 import FormDataNode from 'form-data';
 import { sendConversionCompleteEmail, sendConversionErrorEmail } from '@/lib/email';
+import { setJob, getJob, JobData } from '@/lib/redis';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // 5 minutes for large documents
@@ -17,37 +18,6 @@ interface DoclingResponse {
   title?: string;
   word_count?: number;
   error?: string;
-}
-
-// In-memory job storage
-const jobs = new Map<string, {
-  status: 'processing' | 'completed' | 'error';
-  progress?: string;
-  error?: string;
-  zipPath?: string;
-  filename?: string;
-  email?: string;
-  createdAt: number;
-}>();
-
-// Export for status route
-export { jobs };
-
-// Cleanup old jobs periodically (jobs older than 1 hour)
-if (typeof setInterval !== 'undefined') {
-  setInterval(() => {
-    const oneHourAgo = Date.now() - 60 * 60 * 1000;
-    for (const [jobId, job] of jobs.entries()) {
-      if (job.createdAt < oneHourAgo) {
-        if (job.zipPath) {
-          try {
-            fs.rmSync(path.dirname(job.zipPath), { recursive: true, force: true });
-          } catch {}
-        }
-        jobs.delete(jobId);
-      }
-    }
-  }, 5 * 60 * 1000);
 }
 
 export async function POST(request: NextRequest) {
@@ -61,6 +31,7 @@ export async function POST(request: NextRequest) {
     const maxFiles = parseInt(formData.get('maxFiles') as string || '50', 10);
     const async = formData.get('async') === 'true';
     const email = formData.get('email') as string | null;
+    const mode = formData.get('mode') as string || 'basic'; // 'basic' or 'premium'
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
@@ -72,7 +43,7 @@ export async function POST(request: NextRequest) {
       const fileName = file.name;
       const fileBuffer = Buffer.from(await file.arrayBuffer());
       
-      jobs.set(jobId, {
+      await setJob(jobId, {
         status: 'processing',
         progress: 'Starting conversion...',
         email: email || undefined,
@@ -80,7 +51,7 @@ export async function POST(request: NextRequest) {
       });
 
       // Start background processing (don't await)
-      processDocumentAsync(jobId, fileBuffer, fileName, outputFormat, maxWords, maxFiles, doclingUrl, email || undefined);
+      processDocumentAsync(jobId, fileBuffer, fileName, outputFormat, maxWords, maxFiles, doclingUrl, email || undefined, mode);
 
       const message = email 
         ? `Conversión iniciada. Recibirás un email en ${email} cuando esté lista.`
@@ -95,7 +66,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Synchronous mode (original behavior with extended timeout)
-    return await processDocumentSync(file, outputFormat, maxWords, maxFiles, doclingUrl);
+    return await processDocumentSync(file, outputFormat, maxWords, maxFiles, doclingUrl, mode);
 
   } catch (error) {
     console.error('Docling conversion error:', error);
@@ -114,14 +85,17 @@ async function processDocumentAsync(
   maxWords: number,
   maxFiles: number,
   doclingUrl: string,
-  email?: string
+  email?: string,
+  mode: string = 'basic'
 ) {
   try {
-    jobs.set(jobId, { ...jobs.get(jobId)!, progress: 'Sending to Docling service...' });
+    const currentJob = await getJob(jobId);
+    await setJob(jobId, { ...currentJob!, progress: `Sending to Docling service (${mode} mode)...` });
 
     // Use axios with form-data for reliable timeout control
     const formData = new FormDataNode();
     formData.append('file', fileBuffer, { filename: fileName });
+    formData.append('mode', mode);
 
     const axiosResponse = await axios.post(`${doclingUrl}/convert`, formData, {
       headers: formData.getHeaders(),
@@ -131,16 +105,19 @@ async function processDocumentAsync(
     });
 
     if (axiosResponse.status !== 200) {
-      jobs.set(jobId, { ...jobs.get(jobId)!, status: 'error', error: `Docling conversion failed: ${axiosResponse.statusText}` });
+      const job = await getJob(jobId);
+      await setJob(jobId, { ...job!, status: 'error', error: `Docling conversion failed: ${axiosResponse.statusText}` });
       return;
     }
 
-    jobs.set(jobId, { ...jobs.get(jobId)!, progress: 'Processing markdown output...' });
+    const jobAfterConvert = await getJob(jobId);
+    await setJob(jobId, { ...jobAfterConvert!, progress: 'Processing markdown output...' });
 
     const result: DoclingResponse = axiosResponse.data;
 
     if (!result.success || !result.markdown) {
-      jobs.set(jobId, { ...jobs.get(jobId)!, status: 'error', error: result.error || 'Conversion failed' });
+      const job = await getJob(jobId);
+      await setJob(jobId, { ...job!, status: 'error', error: result.error || 'Conversion failed' });
       return;
     }
 
@@ -152,7 +129,8 @@ async function processDocumentAsync(
     const title = result.title || fileName.substring(0, fileName.lastIndexOf('.'));
     const markdown = result.markdown;
 
-    jobs.set(jobId, { ...jobs.get(jobId)!, progress: 'Creating output files...' });
+    const jobBeforeFiles = await getJob(jobId);
+    await setJob(jobId, { ...jobBeforeFiles!, progress: 'Creating output files...' });
 
     if (outputFormat === 'single') {
       const filename = `${sanitizeFilename(title)}.md`;
@@ -174,7 +152,8 @@ async function processDocumentAsync(
       });
     }
 
-    jobs.set(jobId, { ...jobs.get(jobId)!, progress: 'Creating ZIP archive...' });
+    const jobBeforeZip = await getJob(jobId);
+    await setJob(jobId, { ...jobBeforeZip!, progress: 'Creating ZIP archive...' });
 
     // Create ZIP archive
     const zipPath = path.join(tempDir, 'e2kb-output.zip');
@@ -182,12 +161,13 @@ async function processDocumentAsync(
 
     const outputFilename = `e2kb-${fileName.substring(0, fileName.lastIndexOf('.'))}.zip`;
 
-    jobs.set(jobId, {
+    const jobBeforeComplete = await getJob(jobId);
+    await setJob(jobId, {
       status: 'completed',
       zipPath,
       filename: outputFilename,
       email,
-      createdAt: jobs.get(jobId)!.createdAt
+      createdAt: jobBeforeComplete!.createdAt
     });
 
     console.log(`Job ${jobId} completed successfully`);
@@ -203,8 +183,9 @@ async function processDocumentAsync(
     console.error(`Job ${jobId} failed:`, error);
     const errorMessage = error instanceof Error ? error.message : 'Conversion failed';
     
-    jobs.set(jobId, {
-      ...jobs.get(jobId)!,
+    const jobOnError = await getJob(jobId);
+    await setJob(jobId, {
+      ...jobOnError!,
       status: 'error',
       error: errorMessage
     });
@@ -221,11 +202,13 @@ async function processDocumentSync(
   outputFormat: string,
   maxWords: number,
   maxFiles: number,
-  doclingUrl: string
+  doclingUrl: string,
+  mode: string = 'basic'
 ): Promise<NextResponse> {
   // Forward file to Docling service with extended timeout for large PDFs
   const doclingFormData = new FormData();
   doclingFormData.append('file', file);
+  doclingFormData.append('mode', mode);
 
   // Create AbortController with 10 minute timeout for large document processing
   const controller = new AbortController();

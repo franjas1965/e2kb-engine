@@ -6,7 +6,7 @@ import * as os from 'os';
 
 // Configure route segment for large file uploads
 export const runtime = 'nodejs';
-export const maxDuration = 60; // 60 seconds timeout
+export const maxDuration = 300; // 5 minutes timeout for premium mode with image processing
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,6 +16,7 @@ export async function POST(request: NextRequest) {
     const extractImages = formData.get('extractImages') !== 'false';
     const maxWords = parseInt(formData.get('maxWords') as string || '400000', 10);
     const maxFiles = parseInt(formData.get('maxFiles') as string || '50', 10);
+    const mode = formData.get('mode') as string || 'basic';  // 'basic' or 'premium'
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
@@ -46,7 +47,8 @@ export async function POST(request: NextRequest) {
       extractImages,
       convertWikiLinks: true,
       maxWords,
-      maxFiles
+      maxFiles,
+      mode: mode as 'basic' | 'premium'
     });
 
     const outputBuffer = fs.readFileSync(result.outputPath);

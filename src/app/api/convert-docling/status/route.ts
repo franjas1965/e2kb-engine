@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as fs from 'fs';
 import * as path from 'path';
-import { jobs } from '../route';
+import { getJob, deleteJob } from '@/lib/redis';
 
 export const runtime = 'nodejs';
 
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Missing jobId parameter' }, { status: 400 });
   }
 
-  const job = jobs.get(jobId);
+  const job = await getJob(jobId);
   
   if (!job) {
     return NextResponse.json({ error: 'Job not found' }, { status: 404 });
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
       const zipBuffer = fs.readFileSync(job.zipPath);
       
       // Clean up the job and file after download
-      jobs.delete(jobId);
+      await deleteJob(jobId);
       fs.rmSync(path.dirname(job.zipPath), { recursive: true, force: true });
       
       return new NextResponse(zipBuffer, {

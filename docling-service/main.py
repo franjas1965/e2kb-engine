@@ -1,39 +1,68 @@
 """
-E2KB Docling Service - FastAPI service for document conversion using Docling
+E2KB Docling Service - Document Conversion with API-based VLM Support
 Supports: PDF, DOCX, PPTX, XLSX, images (with OCR), HTML
-Enhanced with VLM for formula/image description
+
+Architecture:
+- EPUB: Handled by Node.js (not this service)
+- PDF with images: Claude/OpenAI API for full page processing
+- PDF text-only: OCR extraction with structured Markdown
+- Other formats: Docling standard conversion
 """
 
 import os
+import time
+import base64
+import logging
 import tempfile
 import shutil
-import time
-import logging
-import base64
-import re
-import httpx
 from pathlib import Path
 from typing import Optional, List, Dict, Any
+from enum import Enum
+
+import httpx
+import fitz  # PyMuPDF
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from docling.document_converter import DocumentConverter
+from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
 
-# Ollama configuration
-OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-VLM_MODEL = os.environ.get("VLM_MODEL", "llava:13b")
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
+# API Keys (from environment variables)
+CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY", "")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+
+# API URLs
+CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
+OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+
+# Models - Haiku es más económico y suficiente para OCR de fórmulas
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-3-5-haiku-20241022")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
+
+# Processing settings
+PAGE_RENDER_SCALE = 3.0  # Higher = better quality, more tokens
+MIN_TEXT_CHARS = 50  # Minimum chars to consider page has text
+IMAGE_COVERAGE_THRESHOLD = 0.05  # 5% coverage = has significant images
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# =============================================================================
+# FASTAPI APP
+# =============================================================================
+
 app = FastAPI(
     title="E2KB Docling Service",
-    description="Document conversion service using Docling",
-    version="1.0.0"
+    description="Document conversion with optional VLM API support",
+    version="2.0.0"
 )
 
 # Supported formats
@@ -53,290 +82,700 @@ SUPPORTED_EXTENSIONS = {
     '.asciidoc': InputFormat.ASCIIDOC,
 }
 
+# =============================================================================
+# MODELS
+# =============================================================================
+
+class ProcessingMode(str, Enum):
+    BASIC = "basic"      # OCR only, free
+    PREMIUM = "premium"  # VLM API for images/formulas
+
 class ConversionResult(BaseModel):
     success: bool
     markdown: Optional[str] = None
     title: Optional[str] = None
     error: Optional[str] = None
     word_count: Optional[int] = None
+    processing_mode: Optional[str] = None
+    pages_processed: Optional[int] = None
+    estimated_cost: Optional[float] = None
 
+class DocumentAnalysis(BaseModel):
+    pages: int
+    has_images: bool
+    has_text: bool
+    total_images: int
+    pages_with_images: int
+    text_coverage: float
+    recommended_mode: str
+    estimated_cost_premium: float
+
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
 
 def count_words(text: str) -> int:
     """Count words in text"""
     return len(text.split())
 
 
-async def check_ollama_available() -> bool:
-    """Check if Ollama service is available"""
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(f"{OLLAMA_URL}/api/tags")
-            return response.status_code == 200
-    except Exception:
-        return False
+def get_available_api() -> Optional[str]:
+    """Check which API is configured"""
+    if CLAUDE_API_KEY:
+        return "claude"
+    elif OPENAI_API_KEY:
+        return "openai"
+    return None
 
 
-async def check_model_available(model: str) -> bool:
-    """Check if a specific model is available in Ollama"""
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(f"{OLLAMA_URL}/api/tags")
-            if response.status_code == 200:
-                data = response.json()
-                models = [m.get("name", "") for m in data.get("models", [])]
-                return any(model in m for m in models)
-            return False
-    except Exception:
-        return False
+# =============================================================================
+# PDF ANALYSIS
+# =============================================================================
 
-
-async def describe_image_with_vlm(image_path: Path, context: str = "") -> str:
+def analyze_pdf(pdf_path: Path) -> Dict[str, Any]:
     """
-    Use VLM to describe an image (formula, table, diagram, etc.)
-    Returns LaTeX for formulas or descriptive text for other images
+    Quick analysis of PDF to determine content type and recommend processing mode.
     """
-    try:
-        # Read and encode image
-        with open(image_path, "rb") as f:
-            image_data = base64.b64encode(f.read()).decode("utf-8")
+    doc = fitz.open(str(pdf_path))
+    page_count = len(doc)
+    
+    total_text_chars = 0
+    total_images = 0
+    pages_with_images = 0
+    pages_with_text = 0
+    
+    for page in doc:
+        # Check text
+        text = page.get_text("text").strip()
+        text_len = len(text)
+        total_text_chars += text_len
+        if text_len >= MIN_TEXT_CHARS:
+            pages_with_text += 1
         
-        # Determine image type from extension
-        ext = image_path.suffix.lower()
-        mime_type = {
-            ".png": "image/png",
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".gif": "image/gif",
-            ".webp": "image/webp",
-        }.get(ext, "image/png")
+        # Check images
+        images = page.get_images(full=True)
+        img_count = len(images)
+        total_images += img_count
         
-        # Create prompt for the VLM
-        prompt = """Analiza esta imagen de un documento técnico español.
-
-Si es una FÓRMULA MATEMÁTICA:
-- Transcríbela en formato LaTeX entre $$ ... $$
-- Añade una breve descripción de qué calcula
-
-Si es una TABLA:
-- Conviértela a formato Markdown
-- Incluye todos los datos visibles
-
-Si es un DIAGRAMA, PLANO o FIGURA:
-- Describe detalladamente su contenido
-- Menciona etiquetas, valores y relaciones visibles
-
-Si es TEXTO:
-- Transcríbelo fielmente
-
-Contexto del documento: """ + (context if context else "Documento técnico normativo español")
-
-        # Call Ollama API
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{OLLAMA_URL}/api/generate",
-                json={
-                    "model": VLM_MODEL,
-                    "prompt": prompt,
-                    "images": [image_data],
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.1,
-                        "num_predict": 1024
-                    }
-                }
-            )
+        if img_count > 0:
+            # Calculate image coverage
+            page_rect = page.rect
+            page_area = page_rect.width * page_rect.height
+            total_img_area = 0
             
-            if response.status_code == 200:
-                result = response.json()
-                return result.get("response", "").strip()
-            else:
-                logger.error(f"VLM error: {response.status_code} - {response.text}")
-                return f"[Imagen no procesada: {image_path.name}]"
-                
-    except Exception as e:
-        logger.error(f"Error describing image {image_path}: {e}")
-        return f"[Error procesando imagen: {image_path.name}]"
-
-
-def extract_images_from_document(result, output_dir: Path) -> List[Dict[str, Any]]:
-    """
-    Extract images from Docling conversion result
-    Returns list of image info with paths and context
-    """
-    images = []
+            for img in images:
+                try:
+                    xref = img[0]
+                    for rect in page.get_image_rects(xref):
+                        total_img_area += rect.width * rect.height
+                except:
+                    pass
+            
+            if page_area > 0 and (total_img_area / page_area) >= IMAGE_COVERAGE_THRESHOLD:
+                pages_with_images += 1
     
+    doc.close()
+    
+    has_images = pages_with_images > 0
+    has_text = pages_with_text > 0
+    text_coverage = pages_with_text / page_count if page_count > 0 else 0
+    
+    # Determine recommendation
+    if has_images:
+        recommended_mode = "premium"
+        reason = f"Documento con {total_images} imágenes en {pages_with_images} páginas. Se recomienda procesamiento Premium para extraer fórmulas y diagramas."
+    else:
+        recommended_mode = "basic"
+        reason = "Documento solo texto. El procesamiento básico es suficiente."
+    
+    # Estimate cost (Claude: ~$0.015 per page with images)
+    estimated_cost = pages_with_images * 0.015 if has_images else 0
+    
+    return {
+        "pages": page_count,
+        "has_images": has_images,
+        "has_text": has_text,
+        "total_images": total_images,
+        "pages_with_images": pages_with_images,
+        "pages_with_text": pages_with_text,
+        "text_coverage": text_coverage,
+        "recommended_mode": recommended_mode,
+        "recommendation_reason": reason,
+        "estimated_cost_premium": round(estimated_cost, 3),
+    }
+
+
+# =============================================================================
+# BASIC PROCESSING (FREE - DOCLING STRUCTURED)
+# =============================================================================
+
+import re
+
+def convert_pdf_with_docling_basic(pdf_path: Path) -> tuple[str, int]:
+    """
+    Convert PDF using Docling for better structure detection.
+    Returns (markdown, page_count)
+    """
     try:
-        # Docling stores pictures in the document
-        if hasattr(result.document, 'pictures') and result.document.pictures:
-            for idx, picture in enumerate(result.document.pictures):
-                if hasattr(picture, 'image') and picture.image:
-                    # Save image to file
-                    img_filename = f"image_{idx:03d}.png"
-                    img_path = output_dir / img_filename
-                    
-                    # Get image data
-                    if hasattr(picture.image, 'pil_image'):
-                        picture.image.pil_image.save(str(img_path))
-                    elif hasattr(picture, 'get_image'):
-                        img = picture.get_image(result.document)
-                        if img:
-                            img.save(str(img_path))
-                    
-                    if img_path.exists():
-                        # Get context (surrounding text)
-                        context = ""
-                        if hasattr(picture, 'caption') and picture.caption:
-                            context = picture.caption
-                        
-                        images.append({
-                            "index": idx,
-                            "path": img_path,
-                            "filename": img_filename,
-                            "context": context,
-                            "page": getattr(picture, 'page_no', None)
-                        })
-                        logger.info(f"📷 Extracted image {idx}: {img_filename}")
+        # Configure Docling for optimal structure extraction
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.do_table_structure = True
+        pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
         
-        # Also check for figures
-        if hasattr(result.document, 'figures') and result.document.figures:
-            for idx, figure in enumerate(result.document.figures):
-                if hasattr(figure, 'image') and figure.image:
-                    img_filename = f"figure_{idx:03d}.png"
-                    img_path = output_dir / img_filename
-                    
-                    if hasattr(figure.image, 'pil_image'):
-                        figure.image.pil_image.save(str(img_path))
-                    
-                    if img_path.exists():
-                        context = getattr(figure, 'caption', "") or ""
-                        images.append({
-                            "index": idx + 1000,  # Offset to avoid collision
-                            "path": img_path,
-                            "filename": img_filename,
-                            "context": context,
-                            "page": getattr(figure, 'page_no', None)
-                        })
-                        logger.info(f"📊 Extracted figure {idx}: {img_filename}")
-                        
-    except Exception as e:
-        logger.error(f"Error extracting images: {e}")
-    
-    return images
-
-
-async def enrich_markdown_with_vlm(markdown: str, images: List[Dict[str, Any]], doc_title: str) -> str:
-    """
-    Enrich markdown by replacing image placeholders with VLM descriptions
-    """
-    if not images:
-        return markdown
-    
-    # Check if Ollama/VLM is available
-    if not await check_ollama_available():
-        logger.warning("⚠️ Ollama not available, skipping VLM enrichment")
-        return markdown
-    
-    if not await check_model_available(VLM_MODEL):
-        logger.warning(f"⚠️ Model {VLM_MODEL} not available, skipping VLM enrichment")
-        return markdown
-    
-    logger.info(f"🤖 Processing {len(images)} images with VLM ({VLM_MODEL})...")
-    
-    enriched_parts = []
-    
-    for img_info in images:
-        logger.info(f"🔍 Analyzing image {img_info['index']}: {img_info['filename']}")
-        
-        # Get VLM description
-        description = await describe_image_with_vlm(
-            img_info['path'],
-            context=f"Documento: {doc_title}. {img_info.get('context', '')}"
+        converter = DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+            }
         )
         
-        if description:
-            enriched_parts.append({
-                "filename": img_info['filename'],
-                "description": description,
-                "page": img_info.get('page')
-            })
-            logger.info(f"✅ Image {img_info['index']} described ({len(description)} chars)")
-    
-    # Insert descriptions into markdown
-    # Look for image references or empty sections that might be formulas
-    enriched_markdown = markdown
-    
-    for part in enriched_parts:
-        # Add description as a block after any reference to the image
-        # or append at the end if no reference found
-        img_ref = f"![{part['filename']}]"
-        if img_ref in enriched_markdown:
-            enriched_markdown = enriched_markdown.replace(
-                img_ref,
-                f"{img_ref}\n\n{part['description']}\n"
-            )
-    
-    # Append any descriptions that weren't inserted
-    if enriched_parts:
-        enriched_markdown += "\n\n---\n## Contenido Visual Extraído\n\n"
-        for part in enriched_parts:
-            page_info = f" (Página {part['page']})" if part.get('page') else ""
-            enriched_markdown += f"### {part['filename']}{page_info}\n\n{part['description']}\n\n"
-    
-    return enriched_markdown
+        logger.info(f"📄 Converting PDF with Docling: {pdf_path.name}")
+        result = converter.convert(str(pdf_path))
+        
+        # Get page count
+        doc = fitz.open(str(pdf_path))
+        page_count = len(doc)
+        
+        # Check for images
+        total_images = 0
+        for page in doc:
+            total_images += len(page.get_images())
+        doc.close()
+        
+        # Export to markdown
+        markdown = result.document.export_to_markdown()
+        
+        # Post-process to improve structure
+        markdown = improve_markdown_structure(markdown, pdf_path.stem)
+        
+        # Add note about images if present
+        if total_images > 0:
+            markdown += f"\n\n---\n*[Este documento contiene {total_images} imagen(es). Usar modo Premium para extraer fórmulas y diagramas.]*\n"
+        
+        logger.info(f"✅ Docling conversion complete: {len(markdown)} chars, {page_count} pages")
+        return markdown, page_count
+        
+    except Exception as e:
+        logger.error(f"Docling conversion failed: {e}, falling back to PyMuPDF")
+        return extract_pdf_text_pymupdf(pdf_path)
 
+
+def improve_markdown_structure(markdown: str, title: str) -> str:
+    """
+    Post-process markdown to improve hierarchical structure.
+    Detects numbered sections and converts to proper headings.
+    """
+    lines = markdown.split('\n')
+    improved_lines = []
+    
+    # Patterns for section detection
+    # Matches: "1.", "1.1", "1.1.1", "2.3.4.5", etc.
+    section_pattern = re.compile(r'^(\d+(?:\.\d+)*)\s+(.+)$')
+    # Matches: "a)", "b)", "(a)", "(1)", etc.
+    list_item_pattern = re.compile(r'^[\(\[]?[a-zA-Z0-9][\)\]]\s+')
+    # Matches: "- ", "• ", "* "
+    bullet_pattern = re.compile(r'^[-•*]\s+')
+    
+    for line in lines:
+        stripped = line.strip()
+        
+        if not stripped:
+            improved_lines.append('')
+            continue
+        
+        # Check for numbered sections
+        match = section_pattern.match(stripped)
+        if match:
+            section_num = match.group(1)
+            section_text = match.group(2)
+            depth = section_num.count('.')
+            
+            # Determine heading level based on depth
+            if depth == 0:
+                # Main section: "1 Title" -> "## 1. Title"
+                improved_lines.append(f"\n## {section_num}. {section_text}\n")
+            elif depth == 1:
+                # Subsection: "1.1 Title" -> "### 1.1 Title"
+                improved_lines.append(f"\n### {section_num} {section_text}\n")
+            elif depth == 2:
+                # Sub-subsection: "1.1.1 Title" -> "#### 1.1.1 Title"
+                improved_lines.append(f"\n#### {section_num} {section_text}\n")
+            else:
+                # Deeper levels: bold text
+                improved_lines.append(f"\n**{section_num} {section_text}**\n")
+        elif list_item_pattern.match(stripped):
+            # Convert to proper list item
+            improved_lines.append(f"- {stripped}")
+        elif bullet_pattern.match(stripped):
+            # Already a bullet, keep as is
+            improved_lines.append(line)
+        else:
+            improved_lines.append(line)
+    
+    result = '\n'.join(improved_lines)
+    
+    # Ensure title at the top
+    if not result.startswith('# '):
+        result = f"# {title}\n\n{result}"
+    
+    # Clean up excessive newlines
+    result = re.sub(r'\n{4,}', '\n\n\n', result)
+    
+    return result
+
+
+def extract_pdf_text_pymupdf(pdf_path: Path) -> tuple[str, int]:
+    """
+    Fallback: Extract text from PDF with PyMuPDF.
+    Returns (markdown, page_count)
+    """
+    doc = fitz.open(str(pdf_path))
+    page_count = len(doc)
+    markdown_parts = [f"# {pdf_path.stem}\n"]
+    
+    for page_num, page in enumerate(doc, 1):
+        text = page.get_text("text").strip()
+        if text:
+            markdown_parts.append(f"\n---\n**Página {page_num}**\n\n{text}")
+        
+        images = page.get_images()
+        if images:
+            markdown_parts.append(f"\n*[{len(images)} imagen(es) - usar modo Premium]*\n")
+    
+    doc.close()
+    return "\n".join(markdown_parts), page_count
+
+
+# =============================================================================
+# PREMIUM PROCESSING (API - FULL PAGE VLM)
+# =============================================================================
+
+VLM_PROMPT = """Eres un experto en conversión de documentos técnicos a Markdown estructurado.
+
+Convierte esta imagen de página a Markdown siguiendo estas reglas ESTRICTAS:
+
+## ESTRUCTURA
+- Jerarquía de títulos: # Principal, ## Secciones, ### Subsecciones
+- Secciones numeradas: "2.1 Título" → "### 2.1 Título"
+- **Negrita** para términos importantes
+- *Cursiva* para variables
+
+## FÓRMULAS MATEMÁTICAS (MUY IMPORTANTE)
+- SIEMPRE usa $$ en líneas separadas para fórmulas en bloque
+- NUNCA pongas texto después de $$ en la misma línea
+- NUNCA uses \\over - siempre usa \\frac{numerador}{denominador}
+- NUNCA uses \\displaylines - usa \\begin{aligned} o fórmulas separadas
+- NUNCA uses & fuera de entornos aligned, cases, matrix
+- Formato OBLIGATORIO para cada fórmula:
+
+$$
+FORMULA_LATEX
+$$
+
+> **(Fórmula N)**
+
+- OBLIGATORIO: \\frac{a}{b} para fracciones (NO \\over)
+- Usa \\text{} para texto dentro de fórmulas
+- Subíndices: L_{den}, RR_{ECI,vial}
+- Para fórmulas condicionales usa \\begin{cases}...\\end{cases}
+- Para múltiples líneas alineadas usa \\begin{aligned}...\\end{aligned}
+
+## CONTENIDO
+- NO omitas ningún texto visible
+- Preserva listas con viñetas usando -
+- Tablas en formato Markdown GFM
+
+## SALIDA
+- SOLO Markdown puro, sin explicaciones
+- Cada fórmula DEBE estar en su propio bloque $$"""
+
+
+async def process_page_with_claude(image_base64: str, page_num: int) -> str:
+    """Process a single page image with Claude API"""
+    
+    headers = {
+        "x-api-key": CLAUDE_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    
+    payload = {
+        "model": CLAUDE_MODEL,
+        "max_tokens": 4096,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": image_base64,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": VLM_PROMPT,
+                    },
+                ],
+            }
+        ],
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(CLAUDE_API_URL, headers=headers, json=payload)
+            
+            if response.status_code == 200:
+                data = response.json()
+                content = data.get("content", [])
+                if content and content[0].get("type") == "text":
+                    return content[0].get("text", "")
+            else:
+                logger.error(f"Claude API error: {response.status_code} - {response.text}")
+                return f"[Error procesando página {page_num}]"
+                
+    except Exception as e:
+        logger.error(f"Error calling Claude API: {e}")
+        return f"[Error procesando página {page_num}: {str(e)}]"
+    
+    return ""
+
+
+async def process_page_with_openai(image_base64: str, page_num: int) -> str:
+    """Process a single page image with OpenAI API"""
+    
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    
+    payload = {
+        "model": OPENAI_MODEL,
+        "max_tokens": 4096,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{image_base64}",
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": VLM_PROMPT,
+                    },
+                ],
+            }
+        ],
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(OPENAI_API_URL, headers=headers, json=payload)
+            
+            if response.status_code == 200:
+                data = response.json()
+                choices = data.get("choices", [])
+                if choices:
+                    return choices[0].get("message", {}).get("content", "")
+            else:
+                logger.error(f"OpenAI API error: {response.status_code} - {response.text}")
+                return f"[Error procesando página {page_num}]"
+                
+    except Exception as e:
+        logger.error(f"Error calling OpenAI API: {e}")
+        return f"[Error procesando página {page_num}: {str(e)}]"
+    
+    return ""
+
+
+def page_has_significant_images(page, min_coverage: float = 0.02) -> bool:
+    """
+    Check if a page has significant images (formulas, diagrams, etc.)
+    Returns True if images cover more than min_coverage of the page area.
+    """
+    images = page.get_images()
+    if not images:
+        return False
+    
+    page_area = page.rect.width * page.rect.height
+    total_image_area = 0
+    
+    for img in images:
+        try:
+            xref = img[0]
+            img_rect = page.get_image_rects(xref)
+            if img_rect:
+                for rect in img_rect:
+                    total_image_area += rect.width * rect.height
+        except:
+            # If we can't get rect, assume it's significant
+            return True
+    
+    coverage = total_image_area / page_area if page_area > 0 else 0
+    return coverage > min_coverage
+
+
+def convert_single_page_with_docling(doc, page_num: int, temp_dir: Path) -> str:
+    """
+    Extract a single page as temporary PDF and process with Docling.
+    This gives full Docling structure for text-only pages.
+    """
+    import tempfile
+    
+    try:
+        # Create a new PDF with just this page
+        temp_pdf_path = temp_dir / f"page_{page_num + 1}.pdf"
+        
+        # Create single-page PDF
+        single_page_doc = fitz.open()
+        single_page_doc.insert_pdf(doc, from_page=page_num, to_page=page_num)
+        single_page_doc.save(str(temp_pdf_path))
+        single_page_doc.close()
+        
+        # Process with Docling
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.do_table_structure = True
+        pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
+        
+        converter = DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+            }
+        )
+        
+        result = converter.convert(str(temp_pdf_path))
+        markdown = result.document.export_to_markdown()
+        
+        # Clean up temp file
+        temp_pdf_path.unlink(missing_ok=True)
+        
+        # Apply structure improvements
+        markdown = improve_markdown_structure(markdown, f"page_{page_num + 1}")
+        
+        return markdown
+        
+    except Exception as e:
+        logger.warning(f"Docling failed for page {page_num + 1}: {e}, using PyMuPDF fallback")
+        # Fallback to PyMuPDF text extraction
+        page = doc[page_num]
+        return page.get_text("text").strip()
+
+
+async def convert_pdf_premium(pdf_path: Path, api: str) -> tuple[str, int, dict]:
+    """
+    Convert PDF using HYBRID mode (OPTIMIZED):
+    - Pages WITH images: Use Claude API (full page with structure)
+    - Pages WITHOUT images: Use Docling in BATCH (single PDF for all text pages)
+    
+    All pages combined IN ORDER to maintain document flow.
+    
+    Returns (markdown, page_count, stats)
+    """
+    import tempfile
+    
+    doc = fitz.open(str(pdf_path))
+    page_count = len(doc)
+    
+    # First pass: analyze which pages have images
+    pages_with_images_list = []
+    pages_without_images_list = []
+    
+    logger.info(f"🔍 Analyzing {page_count} pages for images...")
+    
+    for page_num in range(page_count):
+        page = doc[page_num]
+        if page_has_significant_images(page):
+            pages_with_images_list.append(page_num)
+        else:
+            pages_without_images_list.append(page_num)
+    
+    logger.info(f"📊 Analysis: {len(pages_with_images_list)} pages with images, {len(pages_without_images_list)} pages text-only")
+    
+    # Stats for cost estimation
+    stats = {
+        "total_pages": page_count,
+        "pages_with_images": len(pages_with_images_list),
+        "pages_text_only": len(pages_without_images_list),
+        "api_calls": len(pages_with_images_list),
+        "estimated_cost": len(pages_with_images_list) * 0.03  # ~$0.03 per page with Claude
+    }
+    
+    # If no pages have images, use Docling for everything (best structure, free)
+    if not pages_with_images_list:
+        logger.info(f"📝 No images detected. Using Docling for full document (structured, free)...")
+        doc.close()
+        markdown, _ = convert_pdf_with_docling_basic(pdf_path)
+        markdown += f"\n\n---\n*Procesado: {page_count} páginas con Docling (gratis). Sin imágenes detectadas.*"
+        return markdown, page_count, stats
+    
+    # Results dictionary to store content by page number
+    page_results = {}
+    
+    # STEP 1: Process pages WITH images using Claude API (fast, parallel-ready)
+    logger.info(f"🚀 Processing {len(pages_with_images_list)} pages with Claude API...")
+    
+    for page_num in pages_with_images_list:
+        page = doc[page_num]
+        logger.info(f"📄 [CLAUDE] Page {page_num + 1}/{page_count} (has images)...")
+        
+        # Render page to high-resolution image
+        mat = fitz.Matrix(PAGE_RENDER_SCALE, PAGE_RENDER_SCALE)
+        pix = page.get_pixmap(matrix=mat)
+        img_data = pix.tobytes("png")
+        img_base64 = base64.b64encode(img_data).decode("utf-8")
+        
+        # Process with selected API
+        if api == "claude":
+            page_content = await process_page_with_claude(img_base64, page_num + 1)
+        else:
+            page_content = await process_page_with_openai(img_base64, page_num + 1)
+        
+        if page_content:
+            page_results[page_num] = page_content
+            logger.info(f"✅ Page {page_num + 1}: {len(page_content)} chars (Claude)")
+        else:
+            # Fallback to text extraction if API fails
+            page_results[page_num] = doc[page_num].get_text("text").strip()
+            logger.warning(f"⚠️ Page {page_num + 1}: API failed, used text fallback")
+    
+    # STEP 2: Process ALL pages WITHOUT images using Docling in ONE BATCH
+    if pages_without_images_list:
+        logger.info(f"📝 Processing {len(pages_without_images_list)} text-only pages with Docling (batch)...")
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            
+            # Create a single PDF with all text-only pages
+            batch_pdf_path = temp_path / "text_pages_batch.pdf"
+            batch_doc = fitz.open()
+            
+            # Map: position in batch -> original page number
+            batch_to_original = {}
+            for batch_idx, page_num in enumerate(pages_without_images_list):
+                batch_doc.insert_pdf(doc, from_page=page_num, to_page=page_num)
+                batch_to_original[batch_idx] = page_num
+            
+            batch_doc.save(str(batch_pdf_path))
+            batch_doc.close()
+            
+            # Process batch PDF with Docling (ONE call instead of N calls)
+            try:
+                pipeline_options = PdfPipelineOptions()
+                pipeline_options.do_table_structure = True
+                pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
+                
+                converter = DocumentConverter(
+                    format_options={
+                        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+                    }
+                )
+                
+                logger.info(f"📄 Converting batch PDF with Docling ({len(pages_without_images_list)} pages)...")
+                result = converter.convert(str(batch_pdf_path))
+                batch_markdown = result.document.export_to_markdown()
+                
+                # Split by page breaks (Docling uses form feed or we estimate by content)
+                # For now, assign full content to first text page, others get extracted text
+                # This is a simplification - ideally we'd parse Docling's page structure
+                
+                # Apply structure improvements
+                batch_markdown = improve_markdown_structure(batch_markdown, "batch")
+                
+                # Distribute content: for now, use full batch for all text pages combined
+                # We'll split by approximate page markers or use as single block
+                if len(pages_without_images_list) == 1:
+                    page_results[pages_without_images_list[0]] = batch_markdown
+                else:
+                    # Split content roughly by page count
+                    lines = batch_markdown.split('\n')
+                    lines_per_page = max(1, len(lines) // len(pages_without_images_list))
+                    
+                    for i, page_num in enumerate(pages_without_images_list):
+                        start = i * lines_per_page
+                        end = start + lines_per_page if i < len(pages_without_images_list) - 1 else len(lines)
+                        page_results[page_num] = '\n'.join(lines[start:end])
+                
+                logger.info(f"✅ Docling batch complete: {len(batch_markdown)} chars")
+                
+            except Exception as e:
+                logger.warning(f"Docling batch failed: {e}, using PyMuPDF fallback")
+                for page_num in pages_without_images_list:
+                    page_results[page_num] = doc[page_num].get_text("text").strip()
+    
+    doc.close()
+    
+    # STEP 3: Combine results IN ORDER
+    markdown_parts = [f"# {pdf_path.stem}\n"]
+    
+    for page_num in range(page_count):
+        content = page_results.get(page_num, "")
+        if content.strip():
+            markdown_parts.append(f"\n---\n\n{content}")
+    
+    # Add stats footer
+    markdown_parts.append(f"\n\n---\n*Procesado: {stats['pages_text_only']} páginas con Docling (gratis) + {stats['pages_with_images']} páginas con Claude API. Coste estimado: ${stats['estimated_cost']:.2f}*")
+    
+    result = "\n".join(markdown_parts)
+    logger.info(f"✅ Hybrid conversion complete. API calls: {stats['api_calls']}, Est. cost: ${stats['estimated_cost']:.2f}")
+    
+    return result, page_count, stats
+
+
+# =============================================================================
+# DOCLING CONVERSION (for non-PDF formats)
+# =============================================================================
+
+def convert_with_docling(file_path: Path) -> str:
+    """Convert document using Docling (for DOCX, PPTX, etc.)"""
+    
+    pipeline_options = PdfPipelineOptions()
+    pipeline_options.do_table_structure = True
+    pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
+    
+    converter = DocumentConverter(
+        format_options={
+            InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+        }
+    )
+    
+    result = converter.convert(str(file_path))
+    return result.document.export_to_markdown()
+
+
+# =============================================================================
+# API ENDPOINTS
+# =============================================================================
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    ollama_available = await check_ollama_available()
-    model_available = await check_model_available(VLM_MODEL) if ollama_available else False
+    api_status = get_available_api()
     
     return {
-        "status": "healthy", 
+        "status": "healthy",
         "service": "docling",
-        "vlm": {
-            "ollama_url": OLLAMA_URL,
-            "ollama_available": ollama_available,
-            "model": VLM_MODEL,
-            "model_available": model_available
-        }
+        "version": "2.0.0",
+        "api_configured": api_status is not None,
+        "api_provider": api_status,
+        "premium_available": api_status is not None,
     }
 
 
-@app.get("/vlm/status")
-async def vlm_status():
-    """Check VLM (Ollama) status and available models"""
-    ollama_available = await check_ollama_available()
-    
-    if not ollama_available:
-        return {
-            "status": "unavailable",
-            "ollama_url": OLLAMA_URL,
-            "message": "Ollama service not reachable. VLM enrichment will be skipped."
-        }
-    
-    # Get list of models
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(f"{OLLAMA_URL}/api/tags")
-            if response.status_code == 200:
-                data = response.json()
-                models = [m.get("name", "") for m in data.get("models", [])]
-                model_available = any(VLM_MODEL in m for m in models)
-                
-                return {
-                    "status": "available",
-                    "ollama_url": OLLAMA_URL,
-                    "configured_model": VLM_MODEL,
-                    "model_available": model_available,
-                    "available_models": models,
-                    "message": "Ready for VLM enrichment" if model_available else f"Model {VLM_MODEL} not found. Run: ollama pull {VLM_MODEL}"
-                }
-    except Exception as e:
-        return {
-            "status": "error",
-            "error": str(e)
-        }
+@app.get("/config")
+async def get_config():
+    """Get current configuration status"""
+    return {
+        "claude_configured": bool(CLAUDE_API_KEY),
+        "openai_configured": bool(OPENAI_API_KEY),
+        "active_provider": get_available_api(),
+        "claude_model": CLAUDE_MODEL,
+        "openai_model": OPENAI_MODEL,
+        "page_render_scale": PAGE_RENDER_SCALE,
+    }
 
 
 @app.get("/formats")
@@ -345,7 +784,7 @@ async def supported_formats():
     return {
         "formats": list(SUPPORTED_EXTENSIONS.keys()),
         "description": {
-            ".pdf": "PDF documents (native + OCR for scanned)",
+            ".pdf": "PDF documents (Basic: OCR, Premium: VLM for formulas/images)",
             ".docx": "Microsoft Word documents",
             ".pptx": "Microsoft PowerPoint presentations",
             ".xlsx": "Microsoft Excel spreadsheets",
@@ -353,104 +792,124 @@ async def supported_formats():
             ".png/.jpg/.jpeg/.tiff/.bmp": "Images (with OCR)",
             ".md": "Markdown files",
             ".asciidoc": "AsciiDoc files"
-        }
+        },
+        "note": "EPUB files are handled by the Node.js service, not this endpoint."
     }
+
+
+@app.post("/analyze")
+async def analyze_document(file: UploadFile = File(...)):
+    """
+    Analyze a document and recommend processing mode.
+    Returns analysis with recommendation and estimated cost.
+    """
+    file_ext = Path(file.filename).suffix.lower()
+    
+    if file_ext != '.pdf':
+        return {
+            "filename": file.filename,
+            "format": file_ext,
+            "recommended_mode": "basic",
+            "reason": "Non-PDF formats use standard Docling conversion.",
+            "estimated_cost_premium": 0,
+        }
+    
+    # Save file temporarily
+    temp_dir = tempfile.mkdtemp(prefix="e2kb_analyze_")
+    input_path = Path(temp_dir) / file.filename
+    
+    try:
+        with open(input_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        
+        analysis = analyze_pdf(input_path)
+        analysis["filename"] = file.filename
+        analysis["api_available"] = get_available_api()
+        
+        return analysis
+        
+    finally:
+        shutil.rmtree(temp_dir)
 
 
 @app.post("/convert", response_model=ConversionResult)
 async def convert_document(
     file: UploadFile = File(...),
-    extract_tables: bool = Form(default=True),
-    enrich_images: bool = Form(default=True),
+    mode: ProcessingMode = Form(default=ProcessingMode.BASIC),
 ):
     """
-    Convert a document to Markdown using Docling
+    Convert a document to Markdown.
     
     - **file**: The document file to convert
-    - **extract_tables**: Whether to extract and format tables (default: True)
-    - **enrich_images**: Whether to describe images/formulas with VLM (default: True)
+    - **mode**: Processing mode (basic=free OCR, premium=VLM API)
     """
     
-    # Validate file extension
     file_ext = Path(file.filename).suffix.lower()
     if file_ext not in SUPPORTED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file format: {file_ext}. Supported: {list(SUPPORTED_EXTENSIONS.keys())}"
+            detail=f"Unsupported format: {file_ext}. Supported: {list(SUPPORTED_EXTENSIONS.keys())}"
         )
     
-    # Create temp directory for processing
     temp_dir = tempfile.mkdtemp(prefix="e2kb_docling_")
     input_path = Path(temp_dir) / file.filename
-    images_dir = Path(temp_dir) / "images"
-    images_dir.mkdir(exist_ok=True)
     
     try:
-        # Save uploaded file
-        logger.info(f"📥 Receiving file: {file.filename} ({file_ext})")
+        # Save file
+        logger.info(f"📥 Receiving: {file.filename} ({file_ext})")
         with open(input_path, "wb") as f:
             content = await file.read()
             f.write(content)
+        
         file_size_mb = len(content) / (1024 * 1024)
-        logger.info(f"📁 File saved: {file_size_mb:.2f} MB")
+        logger.info(f"📁 Saved: {file_size_mb:.2f} MB")
+        logger.info(f"🔧 Processing mode: {mode.value}")
         
-        # Initialize converter
-        logger.info("🔧 Initializing Docling converter...")
         start_time = time.time()
+        markdown_content = None
+        pages_processed = None
+        estimated_cost = None
         
-        # Use default converter - Docling handles optimization internally
-        converter = DocumentConverter()
-        init_time = time.time() - start_time
-        logger.info(f"✅ Converter initialized in {init_time:.2f}s")
-        
-        # Convert document
-        logger.info(f"🔄 Converting document (this may take a while for large PDFs)...")
-        convert_start = time.time()
-        result = converter.convert(str(input_path))
-        convert_time = time.time() - convert_start
-        logger.info(f"✅ Document converted in {convert_time:.2f}s")
-        
-        # Export to markdown
-        logger.info("📝 Exporting to Markdown...")
-        markdown_content = result.document.export_to_markdown()
-        
-        # Extract title if available
-        title = None
-        if hasattr(result.document, 'title') and result.document.title:
-            title = result.document.title
-        elif hasattr(result.document, 'name') and result.document.name:
-            title = result.document.name
+        # Process based on format and mode
+        if file_ext == '.pdf':
+            if mode == ProcessingMode.PREMIUM:
+                api = get_available_api()
+                if not api:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Premium mode requires API key. Configure CLAUDE_API_KEY or OPENAI_API_KEY."
+                    )
+                
+                markdown_content, pages_processed, stats = await convert_pdf_premium(input_path, api)
+                estimated_cost = stats.get("estimated_cost", 0)
+                logger.info(f"📊 Hybrid stats: {stats['pages_with_images']} premium pages, {stats['pages_text_only']} free pages")
+                
+            else:  # BASIC mode
+                logger.info("📄 Using Docling structured extraction...")
+                markdown_content, pages_processed = convert_pdf_with_docling_basic(input_path)
         else:
-            # Use filename without extension as fallback
-            title = Path(file.filename).stem
+            # Non-PDF: use Docling
+            logger.info(f"🔧 Using Docling for {file_ext}...")
+            markdown_content = convert_with_docling(input_path)
         
-        # Extract and process images with VLM if enabled
-        if enrich_images:
-            logger.info("🖼️ Extracting images from document...")
-            images = extract_images_from_document(result, images_dir)
-            
-            if images:
-                logger.info(f"📷 Found {len(images)} images, processing with VLM...")
-                markdown_content = await enrich_markdown_with_vlm(
-                    markdown_content, 
-                    images, 
-                    title or file.filename
-                )
-            else:
-                logger.info("ℹ️ No images found in document")
+        elapsed = time.time() - start_time
+        word_count = count_words(markdown_content) if markdown_content else 0
         
-        # Count words
-        word_count = count_words(markdown_content)
-        total_time = time.time() - start_time
-        logger.info(f"🎉 Conversion complete! {word_count} words in {total_time:.2f}s")
+        logger.info(f"✅ Conversion complete: {word_count} words in {elapsed:.2f}s")
         
         return ConversionResult(
             success=True,
             markdown=markdown_content,
-            title=title,
-            word_count=word_count
+            title=Path(file.filename).stem,
+            word_count=word_count,
+            processing_mode=mode.value,
+            pages_processed=pages_processed,
+            estimated_cost=estimated_cost,
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ Conversion error: {str(e)}")
         import traceback
@@ -459,31 +918,23 @@ async def convert_document(
             success=False,
             error=str(e)
         )
-    
     finally:
-        # Cleanup temp directory
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
+        shutil.rmtree(temp_dir)
 
 
 @app.post("/convert-batch")
-async def convert_batch(files: list[UploadFile] = File(...)):
-    """
-    Convert multiple documents to Markdown
-    Returns a list of conversion results
-    """
+async def convert_batch(
+    files: list[UploadFile] = File(...),
+    mode: ProcessingMode = Form(default=ProcessingMode.BASIC),
+):
+    """Convert multiple documents"""
     results = []
     
     for file in files:
-        result = await convert_document(file)
+        result = await convert_document(file, mode)
         results.append({
             "filename": file.filename,
             "result": result
         })
     
     return {"results": results}
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)

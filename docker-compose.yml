@@ -35,10 +35,18 @@ services:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
-      - OLLAMA_URL=http://ollama:11434
-    depends_on:
-      - ollama
+      # API Keys para procesamiento premium (configurar en .env)
+      - CLAUDE_API_KEY=${CLAUDE_API_KEY:-}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-20250514}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 120s
     deploy:
       resources:
         limits:
@@ -54,22 +62,6 @@ services:
     volumes:
       - redis-data:/data
 
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-models:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    restart: unless-stopped
-
 volumes:
   redis-data:
   converted-files:
-  ollama-models:

@@ -2,12 +2,46 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as archiver from 'archiver';
 
+// Claude API configuration
+const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
+
+const IMAGE_PROMPT = `Analiza esta imagen de un documento técnico y conviértela a Markdown.
+
+REGLAS:
+- Si es una FÓRMULA matemática: extrae como LaTeX entre $$ ... $$
+- Si es una TABLA: convierte a formato Markdown GFM
+- Si es un DIAGRAMA técnico: describe su contenido estructuradamente
+- Si es un LOGO o imagen decorativa: responde solo "<!-- imagen decorativa -->"
+
+FORMATO DE FÓRMULAS:
+$$
+FORMULA_LATEX
+$$
+
+Solo devuelve el Markdown, sin explicaciones.`;
+
 interface ConversionOptions {
   outputFormat: 'single' | 'multi' | 'optimized';
   extractImages: boolean;
   convertWikiLinks: boolean;
   maxWords?: number;
   maxFiles?: number;
+  mode?: 'basic' | 'premium';  // Premium mode processes images with Claude API
+}
+
+interface ImageProcessingResult {
+  src: string;
+  markdown: string;
+  cached: boolean;
+}
+
+interface PremiumStats {
+  totalImages: number;
+  uniqueImages: number;
+  cachedImages: number;
+  apiCalls: number;
+  estimatedCost: number;
 }
 
 interface MergedChapter {
@@ -37,6 +71,194 @@ interface TocItem {
   href: string;
   level: number;
   children: TocItem[];
+}
+
+// Global image cache for premium mode (persists across chapters)
+const imageCache = new Map<string, string>();
+
+/**
+ * Process an image with Claude API
+ */
+async function processImageWithClaude(imageBase64: string, mimeType: string): Promise<string> {
+  const apiKey = process.env.CLAUDE_API_KEY;
+  if (!apiKey) {
+    console.warn('⚠️ CLAUDE_API_KEY not set, skipping image processing');
+    return '<!-- imagen no procesada: API key no configurada -->';
+  }
+
+  try {
+    const response = await fetch(CLAUDE_API_URL, {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: 4096,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: mimeType,
+                  data: imageBase64,
+                },
+              },
+              {
+                type: 'text',
+                text: IMAGE_PROMPT,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(`Claude API error: ${response.status}`);
+      return '<!-- error procesando imagen -->';
+    }
+
+    const data = await response.json();
+    const content = data.content?.[0];
+    if (content?.type === 'text') {
+      return content.text;
+    }
+    return '<!-- imagen procesada sin resultado -->';
+  } catch (error) {
+    console.error('Error calling Claude API:', error);
+    return '<!-- error procesando imagen -->';
+  }
+}
+
+/**
+ * Extract image from EPUB ZIP and convert to base64
+ */
+function extractImageFromZip(zip: any, imgSrc: string, chapterDir: string): { base64: string; mimeType: string } | null {
+  // Resolve relative path
+  let imgPath = imgSrc;
+  if (imgSrc.startsWith('../')) {
+    // Relative path from chapter directory
+    const parts = chapterDir.split('/').filter(p => p);
+    const imgParts = imgSrc.split('/');
+    let upCount = 0;
+    for (const part of imgParts) {
+      if (part === '..') upCount++;
+      else break;
+    }
+    const baseParts = parts.slice(0, parts.length - upCount);
+    const imgRelative = imgParts.slice(upCount).join('/');
+    imgPath = [...baseParts, imgRelative].join('/');
+  } else if (!imgSrc.startsWith('/') && !imgSrc.includes(':')) {
+    // Relative to chapter directory
+    imgPath = chapterDir + imgSrc;
+  }
+
+  // Try multiple possible paths
+  const possiblePaths = [
+    imgPath,
+    'OEBPS/' + imgPath,
+    'OEBPS/images/' + path.basename(imgPath),
+    'images/' + path.basename(imgPath),
+    imgSrc,
+  ];
+
+  for (const tryPath of possiblePaths) {
+    try {
+      const entry = zip.getEntry(tryPath);
+      if (entry) {
+        const buffer = entry.getData();
+        const base64 = buffer.toString('base64');
+        
+        // Determine MIME type
+        const ext = path.extname(tryPath).toLowerCase();
+        const mimeTypes: Record<string, string> = {
+          '.png': 'image/png',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.gif': 'image/gif',
+          '.webp': 'image/webp',
+          '.svg': 'image/svg+xml',
+        };
+        const mimeType = mimeTypes[ext] || 'image/png';
+        
+        return { base64, mimeType };
+      }
+    } catch (e) {
+      // Try next path
+    }
+  }
+
+  console.warn(`⚠️ Image not found in ZIP: ${imgSrc}`);
+  return null;
+}
+
+/**
+ * Process all images in HTML content with Claude (with caching)
+ */
+async function processImagesInHtml(
+  html: string,
+  zip: any,
+  chapterDir: string,
+  stats: PremiumStats
+): Promise<string> {
+  // Find all img tags
+  const imgRegex = /<img[^>]*src="([^"]+)"[^>]*>/gi;
+  const matches: { fullMatch: string; src: string }[] = [];
+  
+  let match;
+  while ((match = imgRegex.exec(html)) !== null) {
+    matches.push({ fullMatch: match[0], src: match[1] });
+  }
+
+  if (matches.length === 0) {
+    return html;
+  }
+
+  stats.totalImages += matches.length;
+
+  // Process each image
+  let result = html;
+  for (const { fullMatch, src } of matches) {
+    // Check cache first
+    if (imageCache.has(src)) {
+      const cachedResult = imageCache.get(src)!;
+      result = result.replace(fullMatch, `\n\n${cachedResult}\n\n`);
+      stats.cachedImages++;
+      console.log(`♻️ Cache hit: ${src}`);
+      continue;
+    }
+
+    // Extract image from ZIP
+    const imageData = extractImageFromZip(zip, src, chapterDir);
+    if (!imageData) {
+      result = result.replace(fullMatch, '<!-- imagen no encontrada -->');
+      continue;
+    }
+
+    // Process with Claude
+    stats.uniqueImages++;
+    stats.apiCalls++;
+    console.log(`🖼️ Processing image with Claude: ${src}`);
+    
+    const markdown = await processImageWithClaude(imageData.base64, imageData.mimeType);
+    
+    // Cache the result
+    imageCache.set(src, markdown);
+    
+    // Replace in HTML
+    result = result.replace(fullMatch, `\n\n${markdown}\n\n`);
+    
+    // Estimate cost (~$0.01 per image with Claude)
+    stats.estimatedCost += 0.01;
+  }
+
+  return result;
 }
 
 function countWords(text: string): number {
@@ -431,10 +653,22 @@ export class EPUBCore {
     this.options = options;
   }
 
-  async process(): Promise<{ success: boolean; outputPath: string; chapters: number }> {
+  async process(): Promise<{ success: boolean; outputPath: string; chapters: number; premiumStats?: PremiumStats }> {
     const AdmZip = require('adm-zip');
     const zip = new AdmZip(this.bookPath);
     if (!fs.existsSync(this.outputDir)) fs.mkdirSync(this.outputDir, { recursive: true });
+    
+    // Clear image cache at start of new conversion
+    imageCache.clear();
+    
+    // Initialize premium stats
+    const premiumStats: PremiumStats = {
+      totalImages: 0,
+      uniqueImages: 0,
+      cachedImages: 0,
+      apiCalls: 0,
+      estimatedCost: 0
+    };
     
     // Extract metadata
     const metadata = this.extractMetadata(zip);
@@ -442,14 +676,25 @@ export class EPUBCore {
     // Extract TOC
     const toc = this.extractToc(zip);
     
-    // Extract chapters
-    const chapters = this.extractChapters(zip);
+    // Extract chapters (with premium image processing if enabled)
+    const chapters = await this.extractChapters(zip, premiumStats);
     
     // Generate markdown
-    this.generateMarkdown(metadata, toc, chapters);
+    this.generateMarkdown(metadata, toc, chapters, premiumStats);
     
     const outputPath = await this.createOutputArchive();
-    return { success: true, outputPath, chapters: chapters.length };
+    
+    // Log premium stats if used
+    if (this.options.mode === 'premium' && premiumStats.totalImages > 0) {
+      console.log(`\n📊 Premium Stats:`);
+      console.log(`   Total images: ${premiumStats.totalImages}`);
+      console.log(`   Unique images: ${premiumStats.uniqueImages}`);
+      console.log(`   Cached (reused): ${premiumStats.cachedImages}`);
+      console.log(`   API calls: ${premiumStats.apiCalls}`);
+      console.log(`   Estimated cost: $${premiumStats.estimatedCost.toFixed(2)}`);
+    }
+    
+    return { success: true, outputPath, chapters: chapters.length, premiumStats };
   }
 
   private extractMetadata(zip: any): Metadata {
@@ -510,7 +755,7 @@ export class EPUBCore {
     return [];
   }
 
-  private extractChapters(zip: any): Chapter[] {
+  private async extractChapters(zip: any, premiumStats: PremiumStats): Promise<Chapter[]> {
     const chapters: Chapter[] = [];
     const zipEntries = zip.getEntries();
     const processedHrefs = new Set<string>();
@@ -566,11 +811,15 @@ export class EPUBCore {
       // Try to read the file
       const possiblePaths = [opfDir + href, href, 'OEBPS/' + href];
       let content = '';
+      let actualPath = '';
       
       for (const p of possiblePaths) {
         try {
           content = zip.readAsText(p);
-          if (content.length > 100) break;
+          if (content.length > 100) {
+            actualPath = p;
+            break;
+          }
         } catch {}
       }
       
@@ -590,6 +839,12 @@ export class EPUBCore {
       html = html.replace(/<ol[^>]*class="[^"]*toc[^"]*"[^>]*>[\s\S]*?<\/ol>/gi, '');
       html = html.replace(/<ul[^>]*class="[^"]*toc[^"]*"[^>]*>[\s\S]*?<\/ul>/gi, '');
       
+      // Premium mode: process images with Claude before converting to markdown
+      if (this.options.mode === 'premium') {
+        const chapterDir = actualPath.substring(0, actualPath.lastIndexOf('/') + 1);
+        html = await processImagesInHtml(html, zip, chapterDir, premiumStats);
+      }
+      
       const markdown = parseHtmlToMarkdown(html);
       
       if (markdown.length > 50) {
@@ -600,7 +855,7 @@ export class EPUBCore {
     return chapters;
   }
 
-  private generateMarkdown(metadata: Metadata, toc: TocItem[], chapters: Chapter[]): void {
+  private generateMarkdown(metadata: Metadata, toc: TocItem[], chapters: Chapter[], premiumStats: PremiumStats): void {
     // Build metadata block
     let metadataMd = '';
     if (metadata.title) metadataMd += `**Title:** ${metadata.title}\n`;
@@ -610,6 +865,16 @@ export class EPUBCore {
     if (metadata.identifier) metadataMd += `**Identifier:** ${metadata.identifier}\n`;
     if (metadata.creator) metadataMd += `**Creator:** ${metadata.creator}\n`;
     if (metadataMd) metadataMd += '\n';
+    
+    // Add premium stats if applicable
+    if (this.options.mode === 'premium' && premiumStats.totalImages > 0) {
+      metadataMd += `\n---\n**Premium Processing Stats:**\n`;
+      metadataMd += `- Total images: ${premiumStats.totalImages}\n`;
+      metadataMd += `- Unique images processed: ${premiumStats.uniqueImages}\n`;
+      metadataMd += `- Cached (reused): ${premiumStats.cachedImages}\n`;
+      metadataMd += `- Estimated cost: $${premiumStats.estimatedCost.toFixed(2)}\n`;
+      metadataMd += `---\n\n`;
+    }
     
     // Build TOC block
     let tocMd = '';
@@ -692,7 +957,7 @@ export class EPUBCore {
   }
 }
 
-export async function convertEPUB(bookPath: string, outputDir: string, options?: ConversionOptions): Promise<{ success: boolean; outputPath: string; chapters: number }> {
+export async function convertEPUB(bookPath: string, outputDir: string, options?: ConversionOptions): Promise<{ success: boolean; outputPath: string; chapters: number; premiumStats?: PremiumStats }> {
   const engine = new EPUBCore(bookPath, outputDir, options);
   return engine.process();
 }
