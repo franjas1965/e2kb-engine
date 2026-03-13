@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Upload, FileText, Download, Settings, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
+import { Upload, FileText, Download, Settings, CheckCircle, Loader2, AlertCircle, BookOpen, Cpu, Zap, FileCode, Mail, Github, Info, ChevronDown, ChevronUp } from 'lucide-react';
 
 // Supported file formats
 const EPUB_EXTENSIONS = ['.epub'];
@@ -55,6 +55,7 @@ export default function Home() {
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [email, setEmail] = useState('');
   const [emailSubmitted, setEmailSubmitted] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   // Check premium availability on mount
   const checkPremiumAvailable = useCallback(async () => {
@@ -286,14 +287,126 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      <div className="container mx-auto px-4 py-16 max-w-4xl">
-        <div className="text-center mb-12">
-          <h1 className="text-5xl font-bold text-white mb-4">
+      <div className="container mx-auto px-4 py-8 max-w-5xl">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-5xl font-bold text-white mb-3">
             E2KB <span className="text-emerald-400">Engine</span>
           </h1>
-          <p className="text-slate-400 text-lg">
-            Convierte archivos EPUB legales y técnicos en documentos Markdown estructurados
+          <p className="text-slate-400 text-lg mb-4">
+            Plataforma profesional de conversión de documentos a Markdown para IA
           </p>
+          <div className="flex flex-wrap justify-center gap-2 text-xs">
+            <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-full">RAG Ready</span>
+            <span className="px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full">OCR Integrado</span>
+            <span className="px-3 py-1 bg-purple-500/20 text-purple-400 rounded-full">IA Premium</span>
+            <span className="px-3 py-1 bg-amber-500/20 text-amber-400 rounded-full">Multi-formato</span>
+          </div>
+        </div>
+
+        {/* Info Banner - Collapsible */}
+        <div className="mb-6">
+          <button
+            onClick={() => setShowHelp(!showHelp)}
+            className="w-full flex items-center justify-between bg-slate-800/50 hover:bg-slate-800/70 border border-slate-700/50 rounded-xl px-5 py-3 transition-all"
+          >
+            <div className="flex items-center gap-3">
+              <Info className="w-5 h-5 text-emerald-400" />
+              <span className="text-white font-medium">¿Qué es E2KB Engine y cómo funciona?</span>
+            </div>
+            {showHelp ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+          </button>
+          
+          {showHelp && (
+            <div className="mt-2 bg-slate-800/30 border border-slate-700/50 rounded-xl p-6 space-y-6">
+              {/* Objetivo */}
+              <div>
+                <h3 className="text-white font-semibold mb-2 flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-emerald-400" />
+                  Objetivo
+                </h3>
+                <p className="text-slate-400 text-sm leading-relaxed">
+                  E2KB Engine transforma documentos complejos (PDF, EPUB, Word, PowerPoint) en <strong className="text-white">Markdown perfectamente estructurado</strong>, 
+                  optimizado para alimentar sistemas de <strong className="text-emerald-400">Inteligencia Artificial</strong> y bases de conocimiento como NotebookLM, 
+                  ChatGPT, Claude o cualquier sistema RAG (Retrieval-Augmented Generation).
+                </p>
+              </div>
+
+              {/* Formatos soportados */}
+              <div>
+                <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+                  <FileCode className="w-4 h-4 text-emerald-400" />
+                  Formatos soportados
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-slate-700/30 rounded-lg p-3 text-center">
+                    <div className="text-2xl mb-1">📚</div>
+                    <div className="text-white font-medium text-sm">EPUB</div>
+                    <div className="text-slate-500 text-xs">Libros digitales</div>
+                  </div>
+                  <div className="bg-slate-700/30 rounded-lg p-3 text-center">
+                    <div className="text-2xl mb-1">📄</div>
+                    <div className="text-white font-medium text-sm">PDF</div>
+                    <div className="text-slate-500 text-xs">+ OCR escaneados</div>
+                  </div>
+                  <div className="bg-slate-700/30 rounded-lg p-3 text-center">
+                    <div className="text-2xl mb-1">📝</div>
+                    <div className="text-white font-medium text-sm">DOCX</div>
+                    <div className="text-slate-500 text-xs">Microsoft Word</div>
+                  </div>
+                  <div className="bg-slate-700/30 rounded-lg p-3 text-center">
+                    <div className="text-2xl mb-1">📊</div>
+                    <div className="text-white font-medium text-sm">PPTX / XLSX</div>
+                    <div className="text-slate-500 text-xs">Presentaciones</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modos de procesamiento */}
+              <div>
+                <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+                  <Cpu className="w-4 h-4 text-emerald-400" />
+                  Modos de procesamiento
+                </h3>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="bg-slate-700/30 rounded-lg p-4 border border-slate-600/30">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="px-2 py-0.5 bg-green-500/20 text-green-400 rounded text-xs font-medium">BÁSICO</span>
+                      <span className="text-slate-500 text-xs">Gratuito</span>
+                    </div>
+                    <p className="text-slate-400 text-sm">
+                      Extracción de texto estructurado con OCR. Ideal para documentos de texto sin fórmulas matemáticas complejas.
+                    </p>
+                  </div>
+                  <div className="bg-slate-700/30 rounded-lg p-4 border border-purple-500/30">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded text-xs font-medium">PREMIUM</span>
+                      <span className="text-slate-500 text-xs">~$0.01-0.03/página</span>
+                    </div>
+                    <p className="text-slate-400 text-sm">
+                      Usa <strong className="text-purple-300">Claude AI</strong> para transcribir fórmulas matemáticas a LaTeX, interpretar diagramas y tablas complejas.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Casos de uso */}
+              <div>
+                <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-emerald-400" />
+                  Casos de uso ideales
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  <span className="px-3 py-1.5 bg-slate-700/50 text-slate-300 rounded-lg text-sm">📖 Normativas legales (BOE, DOUE)</span>
+                  <span className="px-3 py-1.5 bg-slate-700/50 text-slate-300 rounded-lg text-sm">🔬 Papers científicos</span>
+                  <span className="px-3 py-1.5 bg-slate-700/50 text-slate-300 rounded-lg text-sm">🏗️ Manuales técnicos</span>
+                  <span className="px-3 py-1.5 bg-slate-700/50 text-slate-300 rounded-lg text-sm">📐 Documentos con fórmulas</span>
+                  <span className="px-3 py-1.5 bg-slate-700/50 text-slate-300 rounded-lg text-sm">📚 Libros de texto</span>
+                  <span className="px-3 py-1.5 bg-slate-700/50 text-slate-300 rounded-lg text-sm">🤖 Bases de conocimiento IA</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-8 border border-slate-700/50">
@@ -497,9 +610,74 @@ export default function Home() {
           </button>
         </div>
 
-        <p className="text-center text-slate-500 text-sm mt-8">
-          Soporta EPUB legales y técnicos • Código Penal • CTE • Y más
-        </p>
+        {/* Footer con información del desarrollador */}
+        <footer className="mt-12 pt-8 border-t border-slate-700/50">
+          <div className="grid md:grid-cols-3 gap-6 mb-6">
+            {/* Sobre el proyecto */}
+            <div>
+              <h4 className="text-white font-medium mb-3 flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-emerald-400" />
+                Sobre E2KB Engine
+              </h4>
+              <p className="text-slate-500 text-sm leading-relaxed">
+                Plataforma profesional para transformar documentos complejos en Markdown estructurado, 
+                optimizado para sistemas de IA y bases de conocimiento.
+              </p>
+            </div>
+            
+            {/* Tecnologías */}
+            <div>
+              <h4 className="text-white font-medium mb-3 flex items-center gap-2">
+                <Cpu className="w-4 h-4 text-emerald-400" />
+                Tecnologías
+              </h4>
+              <div className="flex flex-wrap gap-1.5">
+                <span className="px-2 py-1 bg-slate-700/50 text-slate-400 rounded text-xs">Next.js</span>
+                <span className="px-2 py-1 bg-slate-700/50 text-slate-400 rounded text-xs">TypeScript</span>
+                <span className="px-2 py-1 bg-slate-700/50 text-slate-400 rounded text-xs">Docling</span>
+                <span className="px-2 py-1 bg-slate-700/50 text-slate-400 rounded text-xs">Claude AI</span>
+                <span className="px-2 py-1 bg-slate-700/50 text-slate-400 rounded text-xs">Docker</span>
+                <span className="px-2 py-1 bg-slate-700/50 text-slate-400 rounded text-xs">Redis</span>
+              </div>
+            </div>
+            
+            {/* Contacto */}
+            <div>
+              <h4 className="text-white font-medium mb-3 flex items-center gap-2">
+                <Mail className="w-4 h-4 text-emerald-400" />
+                Contacto
+              </h4>
+              <div className="space-y-2">
+                <a 
+                  href="mailto:franjas1@gmail.com" 
+                  className="flex items-center gap-2 text-slate-400 hover:text-emerald-400 text-sm transition-colors"
+                >
+                  <Mail className="w-4 h-4" />
+                  franjas1@gmail.com
+                </a>
+                <a 
+                  href="https://github.com/franjas1965/e2kb-engine" 
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-slate-400 hover:text-emerald-400 text-sm transition-colors"
+                >
+                  <Github className="w-4 h-4" />
+                  github.com/franjas1965/e2kb-engine
+                </a>
+              </div>
+            </div>
+          </div>
+          
+          {/* Copyright */}
+          <div className="text-center pt-6 border-t border-slate-700/30">
+            <p className="text-slate-500 text-sm">
+              <strong className="text-slate-400">E2KB Engine</strong> © 2024-2026 Francisco Javier Osorio
+            </p>
+            <p className="text-slate-600 text-xs mt-1">
+              Software propietario. Uso sujeto a autorización del propietario.
+            </p>
+          </div>
+        </footer>
       </div>
 
       {/* Email Modal for PDF conversions */}
